@@ -1,8 +1,9 @@
 # Jarvis TTS sidecar — Kokoro-82M (Apache-2.0) default + Piper (MIT) fallback. CPU, internal net only.
 FROM python:3.12-slim
 
-# espeak-ng: phonemiser used by kokoro-onnx (and available to piper). Minimal otherwise.
-RUN apt-get update && apt-get install -y --no-install-recommends espeak-ng \
+# espeak-ng: phonemiser used by kokoro-onnx (and available to piper).
+# ffmpeg: voice-FX post-processing chain (EQ / compression / spatial / loudness).
+RUN apt-get update && apt-get install -y --no-install-recommends espeak-ng ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # Pinned. onnxruntime (CPU) comes in via kokoro-onnx. Piper runs from its prebuilt

@@ -168,6 +168,43 @@ def speak(text, engine, voice, lang, speed):
     return _wav_bytes(samples, int(rate)), "kokoro", vid
 
 
+# Voice-FX post-processing chains (ffmpeg). "jarvis" = presence EQ + calm compression
+# + subtle spatial depth + loudness normalisation, for a produced, seamless assistant tone.
+FX_CHAINS = {
+    "jarvis": (
+        "highpass=f=80,"
+        "equalizer=f=250:t=q:w=1.2:g=-2,"
+        "equalizer=f=3400:t=q:w=1.3:g=3,"
+        "treble=g=2:f=8500,"
+        "acompressor=threshold=-18dB:ratio=3:attack=8:release=150:makeup=3,"
+        "aecho=0.8:0.88:22:0.14,"
+        "loudnorm=I=-16:TP=-1.5:LRA=11"
+    ),
+    "clean": (
+        "highpass=f=80,"
+        "equalizer=f=3200:t=q:w=1.4:g=2,"
+        "acompressor=threshold=-18dB:ratio=2.5:attack=10:release=160:makeup=2,"
+        "loudnorm=I=-16:TP=-1.5:LRA=11"
+    ),
+}
+
+
+def postfx(wav: bytes, preset: str) -> bytes:
+    """Run a wav through an ffmpeg filter chain; return processed wav bytes."""
+    chain = FX_CHAINS.get(preset)
+    if not chain:
+        return wav
+    proc = subprocess.run(
+        ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error",
+         "-i", "pipe:0", "-af", chain,
+         "-ar", "24000", "-ac", "1", "-c:a", "pcm_s16le", "-f", "wav", "pipe:1"],
+        input=wav, capture_output=True, timeout=60,
+    )
+    if proc.returncode != 0 or not proc.stdout:
+        return wav  # never fail the request over FX; fall back to dry audio
+    return proc.stdout
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -209,14 +246,18 @@ class Handler(BaseHTTPRequestHandler):
         voice = req.get("voice", "bf_emma")
         lang = req.get("lang", "en")
         speed = req.get("speed", 1.0)
+        fx = str(req.get("fx", "") or "")
         try:
             t0 = time.time()
             audio, used_engine, used_voice = speak(text, engine, voice, lang, speed)
+            if fx:
+                audio = postfx(audio, fx)
             self.send_response(200)
             self.send_header("content-type", "audio/wav")
             self.send_header("content-length", str(len(audio)))
             self.send_header("x-engine", used_engine)
             self.send_header("x-voice", used_voice)
+            self.send_header("x-fx", fx)
             self.send_header("x-ms", str(int((time.time() - t0) * 1000)))
             self.end_headers()
             self.wfile.write(audio)
