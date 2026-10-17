@@ -1,6 +1,6 @@
 // Jarvis — voice-first operator. Echo-free audio (mic meters only, never routed to output),
 // particle orb, conversational login (name -> password -> glow), streamed speech, barge-in.
-import { createOrb } from '/jarvis/orb.js';
+import { createOrb } from '/jarvis/orb.js?v=3';
 
 const $ = (s) => document.querySelector(s);
 let CSRF = null, USER = null, state = 'idle', screen = 'login';
@@ -53,7 +53,7 @@ function wireLogin() {
     name = $('#lg-name').value.trim();
     if (!name) return $('#lg-name').focus();
     title.innerHTML = `Hello, <b>${esc(name)}</b>.`; sub.textContent = 'Your password, please.';
-    nameForm.classList.add('hidden'); passForm.classList.remove('hidden'); requestAnimationFrame(() => { passForm.classList.add('show'); $('#lg-pass').focus(); });
+    nameForm.style.display = 'none'; passForm.style.display = 'flex'; requestAnimationFrame(() => { passForm.classList.add('show'); $('#lg-pass').focus(); });
     $('#lg-mic').style.display = 'none';
   };
   nameForm.addEventListener('submit', (e) => { e.preventDefault(); askPassword(); });
@@ -62,7 +62,7 @@ function wireLogin() {
     e.preventDefault(); err.textContent = '';
     const r = await api('/session', { method: 'POST', body: { username: name.toLowerCase(), password: $('#lg-pass').value, code: $('#lg-code').value.trim() } });
     if (r.status === 201) { const d = await r.json(); CSRF = d.csrf; USER = d.user; bloomIn(); }
-    else { const d = await r.json().catch(() => ({})); if (/code/i.test(d.title || '')) { codeWrap.classList.remove('hidden'); codeWrap.classList.add('show'); $('#lg-code').focus(); err.textContent = 'Enter your 2FA code.'; } else { err.textContent = d.detail || 'That didn’t match. Try again.'; } }
+    else { const d = await r.json().catch(() => ({})); if (/code/i.test(d.title || '')) { codeWrap.style.display = 'flex'; codeWrap.classList.add('show'); $('#lg-code').focus(); err.textContent = 'Enter your 2FA code.'; } else { err.textContent = d.detail || 'That didn’t match. Try again.'; } }
   });
 
   // say your name
@@ -86,7 +86,7 @@ function bloomIn() {
 /* ---------------- app ---------------- */
 function enterApp(greet) {
   screen = 'app';
-  $('#login').hidden = true; $('#app').hidden = false;
+  $('#login').style.display = 'none'; $('#app').style.display = 'flex';
   if (!orbApp) orbApp = createOrb($('#orb'));
   $('#assistant').textContent = 'Jarvis';
   wireApp();
@@ -104,8 +104,8 @@ function wireApp() {
   $('#orb').addEventListener('pointerdown', down);
   $('#orb').addEventListener('pointerup', (e) => { if (toggle && state === 'listening') { toggle = false; stopListening(); } else up(e); });
 
-  $('#btn-type').addEventListener('click', () => { const f = $('#textform'); f.classList.toggle('hidden'); if (!f.classList.contains('hidden')) $('#textin').focus(); });
-  $('#textform').addEventListener('submit', (e) => { e.preventDefault(); const v = $('#textin').value.trim(); if (v) { $('#textin').value = ''; $('#textform').classList.add('hidden'); addMsg('user', v); caption(`<span class="you">${esc(v)}</span>`); handle(v); } });
+  $('#btn-type').addEventListener('click', () => { const f = $('#textform'); const open = f.style.display !== 'none'; f.style.display = open ? 'none' : 'flex'; if (!open) $('#textin').focus(); });
+  $('#textform').addEventListener('submit', (e) => { e.preventDefault(); const v = $('#textin').value.trim(); if (v) { $('#textin').value = ''; $('#textform').style.display = 'none'; addMsg('user', v); caption(`<span class="you">${esc(v)}</span>`); handle(v); } });
   $('#btn-chat').addEventListener('click', () => $('#sheet').classList.toggle('open'));
   $('#btn-kill').addEventListener('click', async () => { const on = $('#btn-kill').getAttribute('aria-pressed') !== 'true'; await api('/jarvis/kill', { method: 'POST', body: { on } }); $('#btn-kill').setAttribute('aria-pressed', String(on)); $('#btn-kill').style.color = on ? '#ff6b6b' : ''; });
   addEventListener('keydown', (e) => { if (e.code === 'Space' && document.activeElement.tagName !== 'INPUT' && state !== 'listening') { e.preventDefault(); ensureAudio(); if (state === 'speaking') stopSpeaking(); startListening(); } });

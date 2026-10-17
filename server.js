@@ -1110,7 +1110,7 @@ app.get('/jarvis/', jarvisPage);
 app.get('/jarvis/index.html', jarvisPage);
 
 /* ---- static UI ---- */
-app.use(express.static(path.join(here, 'public'), { maxAge: '1h', setHeaders: (res, p) => { if (p.endsWith('index.html')) res.set('Cache-Control', 'no-cache'); } }));
+app.use(express.static(path.join(here, 'public'), { maxAge: '1h', setHeaders: (res, p) => { if (p.endsWith('index.html') || p.includes('/jarvis/')) res.set('Cache-Control', 'no-cache'); } }));
 app.get('/openapi.yaml', (req, res) => res.sendFile(path.join(here, 'openapi.yaml')));
 app.use((err, req, res, next) => {
   if (err.type === 'entity.parse.failed') return badRequest(res, 'Body must be valid JSON.');

@@ -4,6 +4,7 @@
   --glass:rgba(255,255,255,.055); --line:rgba(170,140,255,.16);
   --dock:84px;
 }
+[hidden]{display:none!important}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{height:100%;margin:0;overscroll-behavior:none}
 body{
