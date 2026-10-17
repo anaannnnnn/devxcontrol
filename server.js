@@ -116,7 +116,10 @@ const jarvisConfirm = makeConfirm({ audit: (type, id, msg, level) => monitor.eve
 const jarvisRL = makeRateLimit({});
 const jarvisSession = makeJarvisSession({});
 const seenUser = (username, appId) => { const u = users.get(username); if (!u) return false; const allow = allowSet(u); return !allow || (appId != null && allow.has(appId)); };
-const jarvisMonitor = { health: (id) => { try { const a = registry.apps.find((x) => x.id === id); return a ? (monitor.appView(a)?.status ?? null) : null; } catch { return null; } } };
+const jarvisMonitor = {
+  health: (id) => { try { const a = registry.apps.find((x) => x.id === id); return a ? (monitor.appView(a)?.status ?? null) : null; } catch { return null; } },
+  incidents: (n = 8) => monitor.events.filter((e) => e.level === 'bad' || e.level === 'warn').slice(-n).reverse().map((e) => ({ app: e.app, msg: e.msg, level: e.level, t: e.t })),
+};
 const jarvisTools = makeJarvisTools({ registry, monitor: jarvisMonitor, ops, autopilot, confirm: jarvisConfirm, seen: seenUser });
 let _kIdx = null, _kAt = 0;
 const knowledgeIndex = () => {

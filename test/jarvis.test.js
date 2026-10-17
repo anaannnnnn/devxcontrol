@@ -9,7 +9,7 @@ function harness({ clock } = {}) {
     { id: 'aquaos', name: 'AquaOS', containers: ['aquaos'] },
     { id: 'secretapp', name: 'Secret', containers: ['secretapp'] },
   ] };
-  const monitor = { health: (id) => ({ ok: true, id }) };
+  const monitor = { health: (id) => ({ ok: true, id }), incidents: () => [{ app: 'aquaos', msg: 'high memory', level: 'warn' }] };
   const ops = {
     appAction: (app, act) => { calls.push(['appAction', app.id, act]); return [{ ok: true }]; },
     backup: (app) => { calls.push(['backup', app.id]); return { ok: true }; },
@@ -18,6 +18,7 @@ function harness({ clock } = {}) {
   const autopilot = {
     reviewsList: () => [{ id: 'R1', app: 'aquaos' }],
     approve: (id) => { calls.push(['approve', id]); return { ok: true, id }; },
+    task: (id, title, detail) => { calls.push(['task', id, title, detail]); return { id: 'T1', app: id, title }; },
   };
   const now = clock || (() => Date.now());
   const confirm = makeConfirm({ now, ttlMs: 1000 });
@@ -97,6 +98,25 @@ test('confirmation is bound to the same user and session', async () => {
   const r = await tools.call({ name: 'app.restart', args: { id: 'aquaos' }, user: 'owner', session: 's1' });
   assert.match((await tools.execute(r.confirm.id, { user: 'intruder', session: 's1' })).error, /wrong-user/);
   assert.match((await tools.execute(r.confirm.id, { user: 'owner', session: 'other' })).error, /wrong-session/);
+});
+
+test('brief (T0) returns a composite situational summary', async () => {
+  const { tools } = harness();
+  const r = await tools.call({ name: 'brief', args: {}, user: 'owner', session: 's1' });
+  assert.ok(r.ok);
+  assert.equal(r.result.apps, 1);            // secretapp filtered
+  assert.equal(r.result.reviewsPending, 1);
+  assert.equal(r.result.incidents.length, 1);
+});
+
+test('task.draft (T1) confirms then calls autopilot.task with stored args', async () => {
+  const { tools, calls } = harness();
+  const r = await tools.call({ name: 'task.draft', args: { id: 'aquaos', title: 'Calmer home page', detail: 'soften colors' }, user: 'owner', session: 's1' });
+  assert.ok(r.confirm && !r.reAuth);
+  assert.equal(calls.length, 0);
+  const ex = await tools.execute(r.confirm.id, { user: 'owner', session: 's1' });
+  assert.ok(ex.ok);
+  assert.deepEqual(calls, [['task', 'aquaos', 'Calmer home page', 'soften colors']]);
 });
 
 test('confirmation expires', async () => {
