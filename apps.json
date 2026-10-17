@@ -28,7 +28,7 @@
         "note": "AWS DynamoDB (DriveThruMenu, DriveThruOrders). Managed by AWS, not on this server."
       },
       "envFile": "voicebite.env",
-      "stack": "Python agent \u00b7 Nova Sonic \u00b7 React"
+      "stack": "Python agent · Nova Sonic · React"
     },
     {
       "id": "nexus",
@@ -65,7 +65,7 @@
           "env": "ADMIN_PIN"
         }
       ],
-      "stack": "Node \u00b7 Postgres"
+      "stack": "Node · Postgres"
     },
     {
       "id": "aquaos",
@@ -102,7 +102,7 @@
         "type": "sqlite",
         "volume": "aquaos_aquaos_data"
       },
-      "stack": "Node \u00b7 SQLite"
+      "stack": "Node · SQLite"
     },
     {
       "id": "jewelry",
@@ -157,7 +157,7 @@
           "weak": true
         }
       ],
-      "stack": "TypeScript \u00b7 Prisma \u00b7 Postgres \u00b7 React"
+      "stack": "TypeScript · Prisma · Postgres · React"
     },
     {
       "id": "greenloop",
@@ -207,7 +207,7 @@
           "env": "ADMIN_PASSWORD"
         }
       ],
-      "stack": "Node 22 \u00b7 SQLite \u00b7 React"
+      "stack": "Node 22 · SQLite · React"
     },
     {
       "id": "exotic-cars",
@@ -224,6 +224,11 @@
         {
           "label": "Site",
           "url": "https://cars.devxpert.online"
+        },
+        {
+          "label": "CRM",
+          "url": "https://cars.devxpert.online/admin",
+          "probe": false
         }
       ],
       "db": {
@@ -231,7 +236,7 @@
         "container": "exotic-db"
       },
       "envFile": ".env",
-      "stack": "Node \u00b7 Postgres"
+      "stack": "Node · Postgres"
     },
     {
       "id": "school-intel",
@@ -253,7 +258,7 @@
         "type": "none",
         "note": "Static build. No server-side database."
       },
-      "stack": "Vite \u00b7 static"
+      "stack": "Vite · static"
     },
     {
       "id": "terrakit",
@@ -279,7 +284,7 @@
         "type": "none",
         "note": "Static site. No database."
       },
-      "stack": "Static \u00b7 Caddy"
+      "stack": "Static · Caddy"
     }
   ],
   "infra": {
