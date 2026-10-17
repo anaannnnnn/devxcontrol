@@ -1083,6 +1083,16 @@ app.get('/themes/:file', (req, res) => {
   res.type('text/javascript').send(themeLib.toTailwind(t));
 });
 
+/* ---- Jarvis page: served with microphone allowed on this origin (global policy disables it) ---- */
+const jarvisPage = (req, res) => {
+  res.set('Permissions-Policy', 'microphone=(self), camera=(), geolocation=()');
+  res.set('Cache-Control', 'no-cache');
+  res.sendFile(path.join(here, 'public/jarvis/index.html'));
+};
+app.get('/jarvis', jarvisPage);
+app.get('/jarvis/', jarvisPage);
+app.get('/jarvis/index.html', jarvisPage);
+
 /* ---- static UI ---- */
 app.use(express.static(path.join(here, 'public'), { maxAge: '1h', setHeaders: (res, p) => { if (p.endsWith('index.html')) res.set('Cache-Control', 'no-cache'); } }));
 app.get('/openapi.yaml', (req, res) => res.sendFile(path.join(here, 'openapi.yaml')));
