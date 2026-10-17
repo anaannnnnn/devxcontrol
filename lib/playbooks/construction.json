@@ -1,0 +1,10 @@
+{
+  "id": "construction",
+  "label": "Construction",
+  "features": [
+    { "id": "projects", "label": "Job sites", "effort": "Med", "benefit": "One place per site", "files": ["project", "site"], "tables": ["projects", "sites"], "words": ["job site", "project"] },
+    { "id": "estimates", "label": "Estimates", "effort": "Med", "benefit": "Quote from the same numbers", "files": ["estimate", "quote"], "tables": ["estimates", "quotes"], "words": ["estimate", "quote"] },
+    { "id": "schedule", "label": "Crew schedule", "effort": "Med", "benefit": "Know who is on site tomorrow", "files": ["schedule", "crew"], "tables": ["schedules", "crews"], "words": ["schedule", "crew"] },
+    { "id": "snag", "label": "Snag list", "effort": "Low", "benefit": "Close punch items with a photo", "files": ["snag", "punch"], "tables": ["snags", "defects"], "words": ["snag", "punch list"] }
+  ]
+}

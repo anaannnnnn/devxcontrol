@@ -1,0 +1,10 @@
+{
+  "id": "education",
+  "label": "Education",
+  "features": [
+    { "id": "roster", "label": "Class roster", "effort": "Med", "benefit": "Know who is in the room", "files": ["student", "class", "roster"], "tables": ["students", "classes"], "words": ["student", "class"] },
+    { "id": "grades", "label": "Grades", "effort": "Med", "benefit": "Results live next to the class", "files": ["grade", "mark"], "tables": ["grades", "marks"], "words": ["grade", "report card"] },
+    { "id": "attendance", "label": "Attendance", "effort": "Low", "benefit": "A missing student is visible", "files": ["attendance"], "tables": ["attendance"], "words": ["attendance"] },
+    { "id": "parent", "label": "Parent view", "effort": "Med", "benefit": "Home can see the same facts", "files": ["parent"], "tables": ["guardians"], "words": ["parent", "guardian"] }
+  ]
+}

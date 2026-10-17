@@ -1,0 +1,10 @@
+{
+  "id": "erp",
+  "label": "ERP",
+  "features": [
+    { "id": "ledger", "label": "Ledger", "effort": "High", "benefit": "Money has a source of truth", "files": ["ledger", "journal"], "tables": ["journal_entries", "accounts"], "words": ["general ledger", "journal"] },
+    { "id": "purchasing", "label": "Purchasing", "effort": "Med", "benefit": "Buys go through one door", "files": ["purchase", "vendor"], "tables": ["purchase_orders", "vendors"], "words": ["purchase order", "vendor"] },
+    { "id": "hr", "label": "People records", "effort": "Med", "benefit": "Staff data is not in chat", "files": ["employee", "payroll"], "tables": ["employees", "payroll"], "words": ["employee", "payroll"] },
+    { "id": "approvals", "label": "Approvals", "effort": "Med", "benefit": "A change waits for a person", "files": ["approval"], "tables": ["approvals"], "words": ["approve", "approval"] }
+  ]
+}

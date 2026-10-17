@@ -1,0 +1,292 @@
+{
+  "serverIp": "172.105.36.108",
+  "apps": [
+    {
+      "id": "voicebite",
+      "name": "VoiceBite",
+      "tagline": "AI voice ordering for drive-thrus",
+      "group": "AI",
+      "dir": "voicebite",
+      "repo": "subunu-salam/devx-ai-voice-commerce",
+      "containers": [
+        "voicebite-agent",
+        "voicebite-web"
+      ],
+      "urls": [
+        {
+          "label": "Web",
+          "url": "https://voicebite.devxpert.online"
+        },
+        {
+          "label": "Console / CRM",
+          "url": "https://voicebite.devxpert.online/console.html",
+          "probe": false
+        }
+      ],
+      "db": {
+        "type": "dynamo",
+        "note": "AWS DynamoDB (DriveThruMenu, DriveThruOrders). Managed by AWS, not on this server."
+      },
+      "envFile": "voicebite.env",
+      "stack": "Python agent \u00b7 Nova Sonic \u00b7 React"
+    },
+    {
+      "id": "nexus",
+      "name": "DevX Nexus",
+      "tagline": "Business platform with OTP, AI and admin console",
+      "group": "Platforms",
+      "dir": "nexus",
+      "repo": "subunu-salam/DevX-Nexus-email-otp-integration",
+      "containers": [
+        "nexus-db",
+        "nexus"
+      ],
+      "urls": [
+        {
+          "label": "App",
+          "url": "https://nexus.devxpert.online",
+          "path": "/api/health"
+        },
+        {
+          "label": "Admin",
+          "url": "https://nexus.devxpert.online/admin",
+          "probe": false
+        }
+      ],
+      "db": {
+        "type": "postgres",
+        "container": "nexus-db"
+      },
+      "envFile": "nexus.env",
+      "logins": [
+        {
+          "label": "Owner PIN",
+          "user": "Owner",
+          "env": "ADMIN_PIN"
+        }
+      ],
+      "stack": "Node \u00b7 Postgres"
+    },
+    {
+      "id": "aquaos",
+      "name": "AquaOS",
+      "tagline": "Water delivery CRM, driver and customer apps",
+      "group": "Platforms",
+      "dir": "aquaos",
+      "repo": "subunu-salam/devx-aquaos-app",
+      "containers": [
+        "aquaos"
+      ],
+      "urls": [
+        {
+          "label": "Home",
+          "url": "https://aquaos.devxpert.online"
+        },
+        {
+          "label": "CRM",
+          "url": "https://aquaos.devxpert.online/crm.html",
+          "probe": false
+        },
+        {
+          "label": "Driver",
+          "url": "https://aquaos.devxpert.online/driver.html",
+          "probe": false
+        },
+        {
+          "label": "Customer",
+          "url": "https://aquaos.devxpert.online/customer.html",
+          "probe": false
+        }
+      ],
+      "db": {
+        "type": "sqlite",
+        "volume": "aquaos_aquaos_data"
+      },
+      "stack": "Node \u00b7 SQLite"
+    },
+    {
+      "id": "jewelry",
+      "name": "Boutique OS",
+      "tagline": "Jewellery storefront, CRM and live gold pricing",
+      "group": "Platforms",
+      "dir": "jewelry",
+      "repo": "subunu-salam/DevX-Jewelry-Digital-Boutique",
+      "containers": [
+        "jewelry-db",
+        "jewelry-api",
+        "jewelry-boutique",
+        "jewelry-crm"
+      ],
+      "urls": [
+        {
+          "label": "Boutique",
+          "url": "https://jewelry.devxpert.online"
+        },
+        {
+          "label": "CRM",
+          "url": "https://jewelry-crm.devxpert.online"
+        },
+        {
+          "label": "API",
+          "url": "https://jewelry-api.devxpert.online",
+          "path": "/health"
+        }
+      ],
+      "db": {
+        "type": "postgres",
+        "container": "jewelry-db"
+      },
+      "envFile": "jewelry.env",
+      "logins": [
+        {
+          "label": "CRM owner",
+          "user": "owner@aurelia.ae",
+          "pass": "Password123!",
+          "weak": true
+        },
+        {
+          "label": "CRM admin",
+          "user": "admin@aurelia.ae",
+          "pass": "Password123!",
+          "weak": true
+        },
+        {
+          "label": "Shop customer",
+          "user": "+971501112233",
+          "pass": "Customer123!",
+          "weak": true
+        }
+      ],
+      "stack": "TypeScript \u00b7 Prisma \u00b7 Postgres \u00b7 React"
+    },
+    {
+      "id": "greenloop",
+      "name": "GreenLoop",
+      "tagline": "Waste logistics CRM with fleet and driver apps",
+      "group": "Platforms",
+      "dir": "greenloop",
+      "repo": "subunu-salam/greenloop-crm-final",
+      "containers": [
+        "greenloop"
+      ],
+      "urls": [
+        {
+          "label": "App",
+          "url": "https://greenloop.devxpert.online"
+        },
+        {
+          "label": "Customer",
+          "url": "https://greenloop.devxpert.online/customer/",
+          "probe": false
+        },
+        {
+          "label": "Driver",
+          "url": "https://greenloop.devxpert.online/driver/",
+          "probe": false
+        },
+        {
+          "label": "CRM",
+          "url": "https://greenloop.devxpert.online/crm/",
+          "probe": false
+        },
+        {
+          "label": "CRM v2",
+          "url": "https://greenloop.devxpert.online/crm-v2/",
+          "probe": false
+        }
+      ],
+      "db": {
+        "type": "sqlite",
+        "volume": "greenloop_gl_data"
+      },
+      "envFile": "greenloop.env",
+      "logins": [
+        {
+          "label": "Admin",
+          "user": "admin",
+          "env": "ADMIN_PASSWORD"
+        }
+      ],
+      "stack": "Node 22 \u00b7 SQLite \u00b7 React"
+    },
+    {
+      "id": "exotic-cars",
+      "name": "Exotic Cars",
+      "tagline": "Luxury car showroom with its own database",
+      "group": "Sites",
+      "dir": "exotic-cars",
+      "repo": "anaannnnnn/exotic-cars",
+      "containers": [
+        "exotic-db",
+        "exotic-cars"
+      ],
+      "urls": [
+        {
+          "label": "Site",
+          "url": "https://cars.devxpert.online"
+        }
+      ],
+      "db": {
+        "type": "postgres",
+        "container": "exotic-db"
+      },
+      "envFile": ".env",
+      "stack": "Node \u00b7 Postgres"
+    },
+    {
+      "id": "school-intel",
+      "name": "School Intel",
+      "tagline": "School intelligence dashboard",
+      "group": "Sites",
+      "dir": "school-intel",
+      "repo": "anaannnnnn/school-intel",
+      "containers": [
+        "school-intel"
+      ],
+      "urls": [
+        {
+          "label": "Site",
+          "url": "https://school.devxpert.online"
+        }
+      ],
+      "db": {
+        "type": "none",
+        "note": "Static build. No server-side database."
+      },
+      "stack": "Vite \u00b7 static"
+    },
+    {
+      "id": "terrakit",
+      "name": "TerraKit",
+      "tagline": "Marketing site on minhafathimapk.art",
+      "group": "Sites",
+      "dir": "website2",
+      "repo": "anaannnnnn/website2",
+      "containers": [
+        "terrakit"
+      ],
+      "urls": [
+        {
+          "label": "Apex",
+          "url": "https://minhafathimapk.art"
+        },
+        {
+          "label": "www",
+          "url": "https://www.minhafathimapk.art"
+        }
+      ],
+      "db": {
+        "type": "none",
+        "note": "Static site. No database."
+      },
+      "stack": "Static \u00b7 Caddy"
+    }
+  ],
+  "infra": {
+    "caddy": "caddy",
+    "protected": [
+      "caddy",
+      "devx-control"
+    ]
+  }
+}

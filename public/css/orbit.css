@@ -1,0 +1,24 @@
+/* Orbit: glass cards, constellation, frames. Mobile first. */
+.orbit-sub { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
+.orbit-sub button { flex: 0 0 auto; border-radius: 999px; }
+.orbit-grid { display: grid; gap: 12px; }
+@media (min-width: 840px) { .orbit-split { display: grid; grid-template-columns: 1.1fr .9fr; gap: 12px; align-items: start; } }
+.heat { display: flex; height: 10px; border-radius: 999px; overflow: hidden; background: rgba(255,255,255,.06); }
+.heat i { display: block; height: 100%; }
+.constellation { position: relative; min-height: 280px; }
+.star { position: absolute; width: 92px; text-align: center; transform: translate(-50%, -50%); }
+.star b { display: block; font-size: 12px; }
+.frames { display: grid; gap: 12px; }
+@media (min-width: 720px) { .frames { grid-template-columns: 280px 1fr; } }
+.phone, .desk { border: 1px solid var(--line); border-radius: 28px; overflow: hidden; background: #000; }
+.phone { width: min(100%, 280px); }
+.phone iframe, .desk iframe { width: 100%; border: 0; background: #111; }
+.phone iframe { height: 520px; }
+.desk iframe { height: 420px; }
+.orbit-canvas { width: 100%; height: min(72vh, 640px); border-radius: 28px; display: block; }
+.orbit-list { display: grid; gap: 8px; }
+.flag-row { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line-soft); }
+.slider { position: relative; }
+.slider input[type="range"] { width: 100%; }
+#orbit-sky:focus { outline: 2px solid var(--accent); outline-offset: 3px; }
+@media (prefers-reduced-motion: reduce) { .orbit-canvas { display: none; } }

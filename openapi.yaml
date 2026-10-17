@@ -1,0 +1,84 @@
+openapi: 3.1.0
+info: { title: DevX Control API, version: 1.0.0, description: Fleet console for the DevX VPS. Errors use RFC 7807 application/problem+json. }
+servers: [{ url: /api/v1 }]
+security: [{ session: [] }]
+components:
+  securitySchemes:
+    session: { type: apiKey, in: cookie, name: dc_s, description: "Cookie from POST /session. Unsafe methods also need header x-csrf-token." }
+  schemas:
+    Problem:
+      type: object
+      required: [type, title, status]
+      properties: { type: { type: string }, title: { type: string }, status: { type: integer }, detail: { type: string } }
+    Page: { type: object, properties: { next_cursor: { type: [string, "null"] }, has_more: { type: boolean } } }
+  responses:
+    Error: { description: Error, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+paths:
+  /session:
+    post: { summary: Sign in (username and password), security: [], requestBody: { content: { application/json: { schema: { type: object, required: [username, password], properties: { username: { type: string }, password: { type: string }, code: { type: string, description: 6-digit code when two-step sign-in is on } } } } } }, responses: { '200': { description: Signed in }, '401': { $ref: '#/components/responses/Error' }, '429': { $ref: '#/components/responses/Error' } } }
+    get: { summary: Current session, responses: { '200': { description: OK }, '401': { $ref: '#/components/responses/Error' } } }
+    delete: { summary: Sign out, responses: { '204': { description: Signed out } } }
+  /fleet: { get: { summary: All apps with live status, responses: { '200': { description: Fleet } } } }
+  /apps/{id}:
+    get: { summary: App detail, parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { '200': { description: App }, '404': { $ref: '#/components/responses/Error' } } }
+  /apps/{id}/history: { get: { summary: "Response, CPU and memory history", parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { '200': { description: Samples } } } }
+  /apps/{id}/data: { get: { summary: Database and volume info, parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { '200': { description: Data } } } }
+  /apps/{id}/secrets/reveal: { post: { summary: Reveal one secret (audited), parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { '200': { description: Value } } } }
+  /apps/{id}/{action}:
+    post: { summary: Start, stop or restart all containers of an app, parameters: [{ name: id, in: path, required: true, schema: { type: string } }, { name: action, in: path, required: true, schema: { enum: [start, stop, restart] } }], responses: { '200': { description: Done }, '409': { $ref: '#/components/responses/Error' } } }
+  /apps/{id}/redeploy: { post: { summary: Pull and rebuild (returns job id), parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { '202': { description: Job started } } } }
+  /apps/{id}/backup: { post: { summary: Back up the app database (returns job id), parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { '202': { description: Job started } } } }
+  /containers/{name}/{action}: { post: { summary: Container action, parameters: [{ name: name, in: path, required: true, schema: { type: string } }, { name: action, in: path, required: true, schema: { enum: [start, stop, restart] } }], responses: { '200': { description: Done } } } }
+  /containers/{name}/logs: { get: { summary: Recent logs, parameters: [{ name: name, in: path, required: true, schema: { type: string } }], responses: { '200': { description: Log lines } } } }
+  /jobs/{id}/stream: { get: { summary: Job output as server-sent events, parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { '200': { description: SSE stream } } } }
+  /backups:
+    get: { summary: List backups, parameters: [{ name: limit, in: query, schema: { type: integer, maximum: 100 } }, { name: cursor, in: query, schema: { type: string } }], responses: { '200': { description: Paged list } } }
+  /backups/{name}:
+    get: { summary: Download a backup, parameters: [{ name: name, in: path, required: true, schema: { type: string } }], responses: { '200': { description: File } } }
+    delete: { summary: Delete a backup, parameters: [{ name: name, in: path, required: true, schema: { type: string } }], responses: { '204': { description: Deleted } } }
+  /events: { get: { summary: Activity log, parameters: [{ name: limit, in: query, schema: { type: integer } }, { name: before, in: query, schema: { type: string } }], responses: { '200': { description: Paged events } } } }
+  /host: { get: { summary: Server capacity and Docker info, responses: { '200': { description: Host } } } }
+  /host/caddy/{op}: { post: { summary: Validate or reload Caddy, parameters: [{ name: op, in: path, required: true, schema: { enum: [validate, reload] } }], responses: { '200': { description: Output } } } }
+  /host/prune-images: { post: { summary: Remove unused images, responses: { '200': { description: Output } } } }
+  /host/test-alert: { post: { summary: Send a test alert, responses: { '200': { description: Result } } } }
+  /account: { get: { summary: Current user, two-step status and user list, responses: { '200': { description: Account } } } }
+  /account/password: { post: { summary: Change your password, responses: { '200': { description: Changed }, '400': { $ref: '#/components/responses/Error' } } } }
+  /account/2fa/setup: { post: { summary: Start two-step setup (returns key), responses: { '200': { description: Secret and otpauth URI } } } }
+  /account/2fa/enable: { post: { summary: Confirm a code and turn two-step on, responses: { '200': { description: Enabled }, '400': { $ref: '#/components/responses/Error' } } } }
+  /account/2fa: { delete: { summary: Turn two-step off (needs password), responses: { '200': { description: Disabled } } } }
+  /credentials: { get: { summary: All saved credentials (no secrets), responses: { '200': { description: List } } } }
+  /apps/{id}/credentials:
+    get: { summary: Credentials for one app, parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { '200': { description: List } } }
+    post: { summary: Save a credential (encrypted), parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { '201': { description: Created }, '400': { $ref: '#/components/responses/Error' } } }
+  /apps/{id}/credentials/{cid}:
+    put: { summary: Edit a credential, parameters: [{ name: id, in: path, required: true, schema: { type: string } }, { name: cid, in: path, required: true, schema: { type: string } }], responses: { '200': { description: Updated } } }
+    delete: { summary: Delete a credential, parameters: [{ name: id, in: path, required: true, schema: { type: string } }, { name: cid, in: path, required: true, schema: { type: string } }], responses: { '204': { description: Deleted } } }
+  /apps/{id}/db/tables: { get: { summary: Tables of the app database, parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { '200': { description: Engine and tables }, '404': { $ref: '#/components/responses/Error' } } } }
+  /apps/{id}/db/tables/{table}: { get: { summary: Rows with search, sort and paging, parameters: [{ name: id, in: path, required: true, schema: { type: string } }, { name: table, in: path, required: true, schema: { type: string } }, { name: q, in: query, schema: { type: string } }, { name: sort, in: query, schema: { type: string } }, { name: limit, in: query, schema: { type: integer, maximum: 500 } }, { name: offset, in: query, schema: { type: integer } }], responses: { '200': { description: Columns and rows } } } }
+  /apps/{id}/db/tables/{table}/rows:
+    post: { summary: Insert a row, parameters: [{ name: id, in: path, required: true, schema: { type: string } }, { name: table, in: path, required: true, schema: { type: string } }], responses: { '201': { description: Inserted } } }
+    put: { summary: Edit one row by key, parameters: [{ name: id, in: path, required: true, schema: { type: string } }, { name: table, in: path, required: true, schema: { type: string } }], responses: { '200': { description: Updated }, '409': { $ref: '#/components/responses/Error' } } }
+  /apps/{id}/db/tables/{table}/rows/delete: { post: { summary: Delete one row by key, parameters: [{ name: id, in: path, required: true, schema: { type: string } }, { name: table, in: path, required: true, schema: { type: string } }], responses: { '200': { description: Deleted } } } }
+  /apps/{id}/db/tables/{table}/export.csv: { get: { summary: Export a table as CSV, parameters: [{ name: id, in: path, required: true, schema: { type: string } }, { name: table, in: path, required: true, schema: { type: string } }], responses: { '200': { description: CSV file } } } }
+  /apps/{id}/db/query: { post: { summary: Run SQL (read-only unless write is true), parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { '200': { description: Rows or status }, '403': { $ref: '#/components/responses/Error' } } } }
+  /updates: { get: { summary: GitHub status for every app, newest change first, responses: { '200': { description: List } } } }
+  /updates/check: { post: { summary: Fetch from GitHub for all apps now, responses: { '200': { description: Checked } } } }
+  /apps/{id}/git/check: { post: { summary: Fetch from GitHub for one app, parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { '200': { description: Status } } } }
+  /apps/{id}/settings: { put: { summary: Turn auto-pull on or off (default off), parameters: [{ name: id, in: path, required: true, schema: { type: string } }], requestBody: { content: { application/json: { schema: { type: object, required: [autoPull], properties: { autoPull: { type: boolean } } } } } }, responses: { '200': { description: Saved } } } }
+  /orbit/flags: { get: { summary: Orbit switches for every visible app. All features default off. Admin writes; members may read their apps., responses: { '200': { description: Flags }, '401': { $ref: '#/components/responses/Error' } } } }
+  /orbit/apps/{id}/flags: { put: { summary: Save per-app Orbit switches and thresholds. Admin only. Nothing turns on unless sent true., parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { '200': { description: Saved }, '403': { $ref: '#/components/responses/Error' } } } }
+  /orbit/apps/{id}/debt/scan: { post: { summary: Design debt scan. Requires the debt switch. No invented score when files are missing., parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { '200': { description: Report }, '409': { $ref: '#/components/responses/Error' } } } }
+  /orbit/apps/{id}/debt/normalise: { post: { summary: Queue a contrast-safe CSS normalise, or auto-apply only if debt is whitelisted. Undo with /debt/undo., parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { '202': { description: Queued or applied } } } }
+  /orbit/apps/{id}/dna/scan: { post: { summary: Classify from README, files and table names. Evidence is returned. Requires the dna switch., parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { '200': { description: Classification and gap map } } } }
+  /orbit/apps/{id}/proving: { post: { summary: Start a proving run. Does not deploy. Shadow is not measured when Docker is absent., parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { '202': { description: Run } } } }
+  /orbit/apps/{id}/ghosts: { post: { summary: Scripted persona check. Headless browser is not claimed unless it ran., parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { '200': { description: Friction report } } } }
+  /orbit/apps/{id}/universes: { post: { summary: Three contrast-checked design directions. Adopt sends a change report. Requires the universes switch., parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { '200': { description: Directions } } } }
+  /orbit/apps/{id}/revenue/compute: { post: { summary: Read-only revenue sample from the mapped table. Audited. DynamoDB is not measurable., parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { '200': { description: Series or not measured } } } }
+  /orbit/apps/{id}/mirror/fetch: { post: { summary: Fetch public competitor pages, honour robots.txt, store derived facts only., parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { '200': { description: Facts }, '429': { $ref: '#/components/responses/Error' } } } }
+  /orbit/brain: { get: { summary: Export the local fix library. Admin only., responses: { '200': { description: Patterns } } }, delete: { summary: Delete the local fix library. Admin only., responses: { '200': { description: Deleted } } } }
+  /orbit/apps/{id}/gift: { post: { summary: Prepare at most one weekly gift. Does not merge or deploy., parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { '200': { description: Gift card } } } }
+  /orbit/talk: { post: { summary: Keyword intent in Arabic or English over read-only tools. Actions return a confirmation card and do not run., responses: { '200': { description: Answer or confirmation } } } }
+  /orbit/talk/{cid}/confirm: { post: { summary: Run a previously confirmed Talk action. Admin only., parameters: [{ name: cid, in: path, required: true, schema: { type: string } }], responses: { '200': { description: Result }, '404': { $ref: '#/components/responses/Error' } } } }
+  /orbit/sky: { get: { summary: Planet facts for apps whose Orbit View switch is on. Missing samples stay null., responses: { '200': { description: Sky } } } }
+  /orbit/apps/{id}/clients: { get: { summary: Client accounts for one app. No password hashes. Requires the rooms switch., parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { '200': { description: Clients } } }, post: { summary: Create a client account for this app only., parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { '201': { description: Client }, '409': { $ref: '#/components/responses/Error' } } } }
+

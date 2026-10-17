@@ -1,0 +1,10 @@
+{
+  "id": "saas",
+  "label": "SaaS",
+  "features": [
+    { "id": "auth", "label": "Sign-in", "effort": "Med", "benefit": "Each customer sees only their data", "files": ["login", "auth", "session"], "tables": ["users", "sessions"], "words": ["sign in", "log in"] },
+    { "id": "billing", "label": "Billing", "effort": "High", "benefit": "The product can charge", "files": ["billing", "stripe", "subscription"], "tables": ["subscriptions", "invoices"], "words": ["subscription", "billing"] },
+    { "id": "onboarding", "label": "Onboarding", "effort": "Low", "benefit": "A new account reaches a first win", "files": ["onboarding", "welcome"], "tables": [], "words": ["get started", "onboarding"] },
+    { "id": "audit", "label": "Audit log", "effort": "Med", "benefit": "You can answer who changed it", "files": ["audit"], "tables": ["audit_log", "events"], "words": ["audit log"] }
+  ]
+}
