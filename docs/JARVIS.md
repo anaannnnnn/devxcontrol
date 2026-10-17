@@ -72,6 +72,20 @@ Owner to pick the English voice from the blind-test page (Kokoro = premium/slowe
 Piper = fast; Arabic = Piper Kareem), and the STT/CPU tradeoff above. Then Phase 2
 (tool registry + confirmation flow) begins.
 
+## Build status (as of this pass)
+- Phase 1 voice lab ✅ (enhanced George locked) · Phase 2 safety core + hardening ✅ · Phase 3 brain (knowledge/persona/tool-calling) ✅ · Phase 4 page ✅ · Phase 5/6 tools (brief, incidents, task.draft) ✅. Suite **125/125**.
+- Server endpoints live under `/api/v1/jarvis/*`; page at `/jarvis` (mic Permissions-Policy override). Verified in DEMO incl. real TTS audio through the sidecar.
+
+## Deploy (ready; not yet executed)
+Jarvis is reachable at **`https://devxpert.shop/jarvis`** once the Control image is rebuilt — no DNS change needed (it's a path on the existing app). Optional dedicated host `jarvis.devxpert.online` needs the DNS record + the Caddy snippet below.
+Steps:
+1. `docker network create --internal jarvis-net`
+2. `docker compose -f sidecars/docker-compose.jarvis.yml up -d` (sidecars; models already in volumes `jarvis-stt-models` / `jarvis-tts-models`)
+3. Rebuild + redeploy Control (bakes in the jarvis code + page): tag rollback `prev6` → `docker compose build devx-control` → `docker compose up -d devx-control`
+4. `docker network connect jarvis-net devx-control` (so Control reaches the sidecars; add `jarvis-net` to the devx-control compose `networks:` to make it survive future redeploys)
+5. Optional subdomain: append `sidecars/Caddyfile.jarvis.snippet` to the Caddyfile + `docker exec caddy caddy reload …` (needs DNS `jarvis.devxpert.online` → host).
+Rollback: retag `prev6` → `1.0.0` and `up -d devx-control`; `docker compose -f sidecars/docker-compose.jarvis.yml down` for sidecars.
+
 ## Not yet built
 Tool registry & risk tiers, confirmation flow, brain/tool-calling in `lib/llm.js`,
 knowledge (BM25) index, the page/orb, actions, briefings, settings, hardening, tests,

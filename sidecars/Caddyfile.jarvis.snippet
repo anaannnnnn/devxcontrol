@@ -1,0 +1,10 @@
+# Jarvis host block — append to /home/anan/caddy/Caddyfile, then:
+#   docker exec caddy caddy reload --config /etc/caddy/Caddyfile
+# Requires DNS: jarvis.devxpert.online -> this server's IP (so Caddy can issue TLS).
+# The root path serves the Jarvis page; /api/v1 and /jarvis assets pass through to Control.
+jarvis.devxpert.online {
+	encode zstd gzip
+	@root path /
+	rewrite @root /jarvis
+	reverse_proxy devx-control:3000
+}
