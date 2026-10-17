@@ -224,6 +224,19 @@ api.post('/session', (req, res) => {
 });
 api.delete('/session', (req, res) => { res.set('Set-Cookie', `dc_s=; Max-Age=0; ${cookieFlags(req)}`); res.status(204).end(); });
 
+// Unauthenticated, rate-limited name capture for the voice login ("say your name"). Transcribes a
+// short clip only; reveals nothing. The password step still fully authenticates.
+api.post('/jarvis/hear', async (req, res) => {
+  const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'anon').split(',')[0].trim();
+  if (!jarvisRL.request('hear:' + ip).ok) return problem(res, 429, 'rate', 'Slow down', 'Too many attempts. Wait a moment.');
+  try {
+    const audio = await readRaw(req, 3 * 1024 * 1024); if (!audio.length) return badRequest(res, 'No audio.');
+    const r = await fetch(`${JARVIS_STT}/transcribe?lang=en`, { method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body: audio, signal: AbortSignal.timeout(30000) });
+    if (!r.ok) return problem(res, 502, 'stt', 'Could not hear', (await r.text()).slice(0, 120));
+    const d = await r.json(); res.json({ text: String(d.text || '').slice(0, 60) });
+  } catch (e) { problem(res, e.status || 502, 'stt', 'Speech service unreachable', String(e.message || e).slice(0, 120)); }
+});
+
 api.use(auth.middleware);
 
 /* ---- who may touch what ----
