@@ -17,7 +17,7 @@ WORKDIR /app
 COPY app.py /app/app.py
 USER jarvis
 
-ENV TTS_PORT=8078 MODEL_DIR=/models
+ENV TTS_PORT=8078 MODEL_DIR=/models JARVIS_VOICE=bm_george JARVIS_FX=jarvis
 EXPOSE 8078
 HEALTHCHECK --interval=20s --timeout=5s --start-period=30s --retries=5 \
     CMD python -c "import urllib.request,sys;sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8078/healthz',timeout=3).status==200 else 1)"

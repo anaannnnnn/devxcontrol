@@ -243,10 +243,12 @@ class Handler(BaseHTTPRequestHandler):
         if not text:
             return self._json(400, {"error": "empty text"})
         engine = req.get("engine", "kokoro")
-        voice = req.get("voice", "bf_emma")
+        voice = req.get("voice") or os.environ.get("JARVIS_VOICE", "bm_george")
         lang = req.get("lang", "en")
         speed = req.get("speed", 1.0)
-        fx = str(req.get("fx", "") or "")
+        # default FX from env (owner's locked choice); request can override or disable with fx="none".
+        fx = req.get("fx", os.environ.get("JARVIS_FX", ""))
+        fx = "" if fx in (None, "none") else str(fx)
         try:
             t0 = time.time()
             audio, used_engine, used_voice = speak(text, engine, voice, lang, speed)

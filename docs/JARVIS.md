@@ -1,6 +1,12 @@
 # Jarvis — voice AI operator for DevX Control
 
-Status: **Phase 1 (voice lab) — in progress, awaiting the owner's voice choice.**
+Status: **Phase 1 complete — voice chosen. Phase 2 (tool registry + confirmation) starting.**
+
+**Voice decision (locked):** English = **Kokoro `bm_george` + `jarvis` FX** ("enhanced George").
+It is the TTS sidecar default (`JARVIS_VOICE=bm_george`, `JARVIS_FX=jarvis`); callers can
+override per request or pass `fx:"none"` for dry audio. Arabic = Piper `ar_JO-kareem`.
+**Latency tuning (my default, reversible):** STT drops to `base.en` and sidecars get more CPU
+to approach a snappy feel; owner can revert to `small` for max accuracy. To be confirmed in Phase 7.
 Branch: `feature/jarvis`. Nothing deployed to production. The live DevX Control,
 Caddy, DNS and other apps are untouched.
 
