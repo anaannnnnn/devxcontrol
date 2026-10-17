@@ -18,6 +18,12 @@ import { makeSettings } from './lib/settings.js';
 import { makeGit } from './lib/gitx.js';
 import { makeIntegrations } from './lib/integrations.js';
 import { makeGithub } from './lib/github.js';
+import { makeConfirm } from './lib/jarvis/confirm.js';
+import { makeJarvisTools } from './lib/jarvis/tools.js';
+import { makeBrain } from './lib/jarvis/brain.js';
+import { makeSession as makeJarvisSession } from './lib/jarvis/session.js';
+import { makeRateLimit } from './lib/jarvis/ratelimit.js';
+import { buildIndex as buildKnowledge, fleetDocs } from './lib/jarvis/knowledge.js';
 import { makeLlm } from './lib/llm.js';
 import { makeAutopilot } from './lib/autopilot.js';
 import { makeStudio } from './lib/studio.js';
@@ -102,6 +108,24 @@ if (!DEMO && seedPassword && seedPassword.length < MIN_PASSWORD) console.warn(`I
 const auth = makeAuth({ secret });
 const orbit = makeOrbit({ registry, settings, monitor, dbx, autopilot, llm, releases, ops, audit: (type, id, msg, level) => monitor.event(type, id, msg, level), dataDir: DATA_DIR, demo: DEMO });
 const rooms = makeRooms({ dataDir: DATA_DIR });
+
+/* ---- Jarvis (voice operator) wiring ---- */
+const JARVIS_STT = env.JARVIS_STT_URL || 'http://jarvis-stt:8077';
+const JARVIS_TTS = env.JARVIS_TTS_URL || 'http://jarvis-tts:8078';
+const jarvisConfirm = makeConfirm({ audit: (type, id, msg, level) => monitor.event('jarvis', id, msg, level || 'warn') });
+const jarvisRL = makeRateLimit({});
+const jarvisSession = makeJarvisSession({});
+const seenUser = (username, appId) => { const u = users.get(username); if (!u) return false; const allow = allowSet(u); return !allow || (appId != null && allow.has(appId)); };
+const jarvisMonitor = { health: (id) => { try { const a = registry.apps.find((x) => x.id === id); return a ? (monitor.appView(a)?.status ?? null) : null; } catch { return null; } } };
+const jarvisTools = makeJarvisTools({ registry, monitor: jarvisMonitor, ops, autopilot, confirm: jarvisConfirm, seen: seenUser });
+let _kIdx = null, _kAt = 0;
+const knowledgeIndex = () => {
+  const t = Date.now(); if (_kIdx && t - _kAt < 60000) return _kIdx;
+  const rd = (f) => { try { return fs.readFileSync(path.join(here, f), 'utf8'); } catch { return ''; } };
+  const docs = fleetDocs({ registry, readme: rd('README.md'), openapi: rd('openapi.yaml'), reviews: (autopilot.reviewsList?.() || []), releaseNotes: (releases.all?.() || []) });
+  _kIdx = buildKnowledge(docs); _kAt = t; return _kIdx;
+};
+const jarvisBrain = makeBrain({ llm, tools: jarvisTools, knowledge: { search: (q, n) => knowledgeIndex().search(q, n) }, session: jarvisSession, rateLimit: jarvisRL, settings: () => ({ name: settings.jarvisName ? settings.jarvisName() : 'Jarvis' }) });
 
 /* ---------------------------- app ---------------------------- */
 const app = express();
@@ -776,6 +800,59 @@ api.post('/reviews/:id/approve', wrap(async (req, res) => {
 }));
 api.post('/reviews/:id/reject', wrap(async (req, res) => res.json(autopilot.reject(req.params.id, req.body?.note))));
 api.post('/reviews/:id/changes', wrap(async (req, res) => { const r = autopilot.requestChanges(req.params.id, req.body?.note); res.status(202).json({ run: r.id }); }));
+
+/* ---- Jarvis (voice operator) ---- */
+const jarvisSid = (req) => req.session.csrf || me(req);
+
+api.get('/jarvis/state', (req, res) => res.json({ ...jarvisRL.state(), name: 'Jarvis' }));
+
+api.post('/jarvis/ask', async (req, res) => {
+  const text = String(req.body?.text || '').trim().slice(0, 1000);
+  if (!text) return badRequest(res, 'Say something first.');
+  try {
+    res.json(await jarvisBrain.respond({ text, user: me(req), sessionId: jarvisSid(req) }));
+  } catch (e) {
+    if (e.code === 'no-llm') return res.json({ say: 'I can read your fleet status, but no AI model is connected yet. Add one in Connections.', pending: null, sources: [] });
+    problem(res, e.status || 500, 'jarvis', 'Jarvis had a problem', String(e.message || e).slice(0, 200));
+  }
+});
+
+api.post('/jarvis/confirm/:id', async (req, res) => {
+  const peek = jarvisConfirm.get(req.params.id);
+  if (!peek) return conflict(res, 'That confirmation has expired. Ask me again.');
+  if (peek.tier >= 2) { // consequential: re-authenticate
+    const v = users.verify(me(req), req.body?.password, req.body?.code);
+    if (!v.ok) return problem(res, 403, 'reauth', v.needCode ? 'Code needed' : 'Re-authentication failed', v.needCode ? 'Enter your 2FA code to confirm this.' : 'That password was not right.');
+  }
+  const out = await jarvisTools.execute(req.params.id, { user: me(req), session: jarvisSid(req) });
+  if (!out.ok) return problem(res, out.status || 409, 'jarvis', 'Could not run that', out.error);
+  res.json(out);
+});
+
+api.post('/jarvis/kill', (req, res) => { if (req.user.role !== 'admin') return problem(res, 403, 'forbidden', 'Not allowed', 'Only an admin.'); jarvisRL.setKill(req.body?.on !== false); res.json(jarvisRL.state()); });
+api.post('/jarvis/readonly', (req, res) => { if (req.user.role !== 'admin') return problem(res, 403, 'forbidden', 'Not allowed', 'Only an admin.'); jarvisRL.setReadOnly(req.body?.on !== false); res.json(jarvisRL.state()); });
+
+api.get('/jarvis/voices', async (_req, res) => { try { const r = await fetch(`${JARVIS_TTS}/voices`, { signal: AbortSignal.timeout(5000) }); res.json(await r.json()); } catch { res.json({ voices: [], error: 'The voice service is not reachable.' }); } });
+
+api.post('/jarvis/speak', async (req, res) => {
+  const text = String(req.body?.text || '').slice(0, 2000); if (!text) return badRequest(res, 'No text to speak.');
+  try {
+    const r = await fetch(`${JARVIS_TTS}/speak`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text, voice: req.body?.voice, fx: req.body?.fx, lang: req.body?.lang || 'en', speed: req.body?.speed }), signal: AbortSignal.timeout(60000) });
+    if (!r.ok) return problem(res, 502, 'tts', 'Voice error', (await r.text()).slice(0, 160));
+    res.set('Content-Type', 'audio/wav'); res.set('Cache-Control', 'no-store'); res.end(Buffer.from(await r.arrayBuffer()));
+  } catch (e) { problem(res, 502, 'tts', 'Voice service unreachable', String(e.message || e).slice(0, 160)); }
+});
+
+api.post('/jarvis/stt', async (req, res) => {
+  try {
+    const audio = await readRaw(req, 6 * 1024 * 1024);
+    if (!audio.length) return badRequest(res, 'No audio received.');
+    const qs = new URLSearchParams({ lang: String(req.query?.lang || ''), prompt: registry.apps.map((a) => a.name).join(' ').slice(0, 300) }).toString();
+    const r = await fetch(`${JARVIS_STT}/transcribe?${qs}`, { method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body: audio, signal: AbortSignal.timeout(120000) });
+    if (!r.ok) return problem(res, 502, 'stt', 'Transcription error', (await r.text()).slice(0, 160));
+    res.json(await r.json());
+  } catch (e) { problem(res, e.status || 502, 'stt', 'Speech service unreachable', String(e.message || e).slice(0, 160)); }
+});
 
 /* ---- studio ---- */
 api.get('/studio/:id/tree', wrap(async (req, res) => res.json(await studio.tree(req.params.id))));
