@@ -17,7 +17,7 @@ services:
       - ${HOME_DIR}/backups:${HOME_DIR}/backups
       - ${HOME_DIR}/caddy:${HOME_DIR}/caddy
       - control-data:/data
-    networks: [web]
+    networks: [web, jarvis-net]
     mem_limit: 384m
     cpus: 0.5
     security_opt: ["no-new-privileges:true"]
@@ -26,4 +26,6 @@ volumes:
   control-data:
 networks:
   web:
+    external: true
+  jarvis-net:
     external: true
