@@ -317,3 +317,27 @@ export function surfaceCss(selector, name, { palette = 'theme', hue = 0, radius 
   }[name] || '';
   return m ? `${selector}{${m};${name === 'brutalist' ? '' : `border-radius:${r}px!important;`}}` : '';
 }
+
+// Size-locked restyle: change ONLY how an element looks (colour, border, radius, shadow, type),
+// keeping its exact footprint. Returns [{name, css (targets the real selector), chip (inline
+// style for a tiny swatch preview)}]. Uses the active Look's --dx-* tokens so variants match it.
+export function styleVariants(selector, size, opts = {}) {
+  const small = size && size.w && size.h && size.h <= 96;
+  const lock = small ? `width:${size.w}px!important;height:${size.h}px!important;min-height:0!important;box-sizing:border-box!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;gap:.5em!important;padding:0 14px!important;` : '';
+  const A = 'var(--dx-accent,#6366f1)', ON = 'var(--dx-on-accent,#fff)', S = 'var(--dx-surface,#fff)', T = 'var(--dx-text,#0f172a)', B = 'var(--dx-border,#e5e7eb)';
+  const mk = (name, decls, chip) => ({ name, css: `${selector}{${decls}${lock}}`, chip });
+  return [
+    mk('Solid', `background:${A}!important;color:${ON}!important;border:1px solid transparent!important;border-radius:10px!important;box-shadow:0 1px 2px rgba(0,0,0,.14)!important;text-decoration:none!important;`, `background:${A};color:${ON};border-radius:9px`),
+    mk('Soft', `background:color-mix(in srgb,${A} 16%,${S})!important;color:${A}!important;border:1px solid color-mix(in srgb,${A} 24%,transparent)!important;border-radius:10px!important;box-shadow:none!important;`, `background:color-mix(in srgb,${A} 16%,${S});color:${A};border-radius:9px`),
+    mk('Outline', `background:transparent!important;color:${A}!important;border:1.5px solid ${A}!important;border-radius:10px!important;box-shadow:none!important;`, `background:transparent;color:${A};border:1.5px solid ${A};border-radius:9px`),
+    mk('Ghost', `background:transparent!important;color:${T}!important;border:1px solid transparent!important;box-shadow:none!important;`, `background:transparent;color:${T};border:1px dashed color-mix(in srgb,${T} 24%,transparent);border-radius:9px`),
+    mk('Gradient', `background:linear-gradient(135deg,${A},color-mix(in srgb,${A} 55%,#000))!important;color:${ON}!important;border:0!important;border-radius:12px!important;box-shadow:0 8px 24px color-mix(in srgb,${A} 40%,transparent)!important;`, `background:linear-gradient(135deg,${A},color-mix(in srgb,${A} 55%,#000));color:${ON};border-radius:10px`),
+    mk('Glass', `background:color-mix(in srgb,${S} 55%,transparent)!important;color:${T}!important;border:1px solid color-mix(in srgb,${T} 14%,transparent)!important;backdrop-filter:blur(10px)!important;border-radius:12px!important;box-shadow:0 4px 18px rgba(0,0,0,.14)!important;`, `background:color-mix(in srgb,${S} 60%,transparent);color:${T};border:1px solid color-mix(in srgb,${T} 14%,transparent);border-radius:10px`),
+    mk('Glow', `background:${A}!important;color:${ON}!important;border:0!important;border-radius:10px!important;box-shadow:0 0 0 1px ${A},0 0 22px color-mix(in srgb,${A} 70%,transparent)!important;`, `background:${A};color:${ON};border-radius:9px;box-shadow:0 0 10px ${A}`),
+    mk('Pill', `background:${A}!important;color:${ON}!important;border:0!important;border-radius:999px!important;box-shadow:0 2px 10px rgba(0,0,0,.16)!important;`, `background:${A};color:${ON};border-radius:999px`),
+    mk('Sharp', `background:${A}!important;color:${ON}!important;border:0!important;border-radius:0!important;box-shadow:none!important;`, `background:${A};color:${ON};border-radius:0`),
+    mk('Elevated', `background:${S}!important;color:${T}!important;border:1px solid ${B}!important;border-radius:12px!important;box-shadow:0 10px 30px rgba(0,0,0,.16)!important;`, `background:${S};color:${T};border:1px solid ${B};border-radius:10px;box-shadow:0 6px 14px rgba(0,0,0,.18)`),
+    mk('Flat', `background:${S}!important;color:${T}!important;border:1px solid ${B}!important;border-radius:8px!important;box-shadow:none!important;`, `background:${S};color:${T};border:1px solid ${B};border-radius:8px`),
+    mk('Mono', `background:${T}!important;color:${S}!important;border:0!important;border-radius:8px!important;letter-spacing:.02em!important;box-shadow:none!important;`, `background:${T};color:${S};border-radius:8px`),
+  ];
+}

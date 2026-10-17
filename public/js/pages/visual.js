@@ -5,7 +5,7 @@
 // Everything is previewed live. Nothing reaches the site until you send it to Autopilot and approve the review.
 import { h, clear, icon, toast, modal, actionBtn, copy } from '../ui.js';
 import { api } from '../api.js';
-import { KINDS, kindFor, variantCount, paramsFromSeed, render, extractContent, contentPool, mapContent, previewDoc, SURFACES, surfaceCss, PALETTES } from '../lib/components.js';
+import { KINDS, kindFor, variantCount, paramsFromSeed, render, extractContent, contentPool, mapContent, previewDoc, SURFACES, surfaceCss, PALETTES, styleVariants } from '../lib/components.js';
 import { LOOKS, FAMILIES, buildLookCss, lookThumb, lookTokens } from '../lib/looks.js';
 import { BLOCKS, BLOCK_GROUPS, blockPreviewDoc, SAMPLE } from '../lib/blocks.js';
 
@@ -53,7 +53,7 @@ export function visualEditor({ id, isAdmin, canApply }) {
     if (!frame || ev.source !== frame.contentWindow) return; const m = ev.data || {};
     if (m.dx === 'ready') { ready = true; if (m.path) curPath = m.path.split('?')[0]; reapply(); paintPanel(); }
     if (m.dx === 'nav') { curPath = m.path.split('?')[0]; seen.add(curPath); for (const l of m.links || []) seen.add(l); pathIn.value = curPath; paintPages(); }
-    if (m.dx === 'select' && typeof m.selector === 'string') { sel = { selector: m.selector, tag: m.tag, kind: m.kind, comp: m.comp, text: m.text, styles: m.styles || {}, html: m.html, classes: m.classes, size: m.size }; tab = 'edit'; editSub = m.comp && kindFor(m.comp.kind) ? 'replace' : 'style'; paintPanel(); }
+    if (m.dx === 'select' && typeof m.selector === 'string') { sel = { selector: m.selector, tag: m.tag, kind: m.kind, comp: m.comp, text: m.text, styles: m.styles || {}, html: m.html, classes: m.classes, size: m.size }; tab = 'edit'; editSub = (m.size && m.size.h && m.size.h <= 96) ? 'style' : (m.comp && kindFor(m.comp.kind) ? 'replace' : 'style'); paintPanel(); }
   }
   const observer = new MutationObserver(() => { if (!root.isConnected) { window.removeEventListener('message', onMsg); observer.disconnect(); } }); observer.observe(document.body, { childList: true, subtree: true });
 
@@ -75,9 +75,37 @@ export function visualEditor({ id, isAdmin, canApply }) {
   const blur = () => { const out = h('output', {}, '0px'); return h('label', { class: 've-row' }, h('span', {}, 'Backdrop blur'), h('input', { type: 'range', min: 0, max: 40, value: 0, 'aria-label': 'Backdrop blur', oninput: (e) => { out.textContent = `${e.target.value}px`; setProp('backdrop-filter', e.target.value === '0' ? 'none' : `blur(${e.target.value}px)`); } }), out); };
   const gradient = () => { const st = { a: '#7c3aed', b: '#36d1ff', ang: 135 }; const apply = () => setProp('background-image', `linear-gradient(${st.ang}deg,${st.a},${st.b})`); return h('div', { class: 've-row' }, h('span', {}, 'Gradient'), h('div', { class: 'row', style: { gap: '6px', alignItems: 'center', flexWrap: 'wrap' } }, h('input', { type: 'color', value: st.a, 'aria-label': 'Gradient start', oninput: (e) => { st.a = e.target.value; apply(); } }), h('input', { type: 'color', value: st.b, 'aria-label': 'Gradient end', oninput: (e) => { st.b = e.target.value; apply(); } }), h('input', { type: 'range', min: 0, max: 360, value: st.ang, 'aria-label': 'Gradient angle', style: { width: '70px' }, oninput: (e) => { st.ang = +e.target.value; apply(); } }), h('button', { class: 'btn sm ghost', onclick: () => setProp('background-image', 'none') }, 'Clear'))); };
   const group = (title, open, kids) => { const a = { class: 've-group' }; if (open) a.open = true; return h('details', a, h('summary', {}, title), h('div', { class: 've-group-body stack', style: { gap: '6px' } }, ...kids)); };
+  // Size-locked restyle gallery: click an element -> swatches of the SAME element in different
+  // looks, same footprint, only appearance changes. The headline "wow" swap.
+  function restyleGallery(box) {
+    const variants = styleVariants(sel.selector, sel.size || null);
+    const sampleText = (sel.text || sel.tag || 'Aa').toString().trim().slice(0, 14) || 'Aa';
+    const key = `${sel.selector}::restyle`;
+    const active = comps.get(key)?.variant;
+    const wrap = h('div', { class: 've-restyle', style: lookVars() + ';display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px' });
+    for (const v of variants) {
+      const sample = h('span', { style: `${v.chip};display:inline-flex;align-items:center;justify-content:center;padding:6px 10px;font:600 12px/1 system-ui,sans-serif;min-width:0;max-width:100%;overflow:hidden;white-space:nowrap` }, sampleText);
+      wrap.append(h('button', {
+        class: `ve-swatch${active === v.name ? ' on' : ''}`, type: 'button', title: v.name, 'aria-pressed': String(active === v.name),
+        onclick: () => {
+          post({ dx: 'css', id: 'rs-' + idOf(sel.selector), css: v.css });
+          comps.set(key, { id: 'rs-' + idOf(sel.selector), css: v.css, html: '', from: '', restyle: true, variant: v.name });
+          paintSummary(); paintPanel();
+        },
+      }, sample, h('span', { class: 've-swatch-cap' }, v.name)));
+    }
+    box.append(
+      h('div', { class: 've-restyle-head' }, h('b', { class: 'small' }, 'Restyle — same size'), sel.size ? h('span', { class: 'muted small' }, ` ${sel.size.w}×${sel.size.h}px, locked`) : null),
+      h('p', { class: 've-help' }, 'Same element, new look. Only colours, borders, radius and shadow change — the size stays put.'),
+      wrap,
+    );
+    if (comps.has(key)) box.append(h('button', { class: 'btn sm ghost danger', style: { marginTop: '6px' }, onclick: () => { post({ dx: 'uncss', id: comps.get(key).id }); comps.delete(key); paintSummary(); paintPanel(); } }, 'Clear restyle'));
+    box.append(h('hr'));
+  }
   function styleTab(box) {
     if (!sel) { box.append(h('p', { class: 'muted small' }, ready ? (selectMode ? 'Click any text, button, image or box on the page.' : 'You are browsing. Click Select above, then click an element to change it.') : 'Loading the page ...')); return; }
     box.append(h('p', { class: 'mono small muted ve-sel' }, `<${sel.tag}> ${sel.kind}  ${sel.selector}`));
+    restyleGallery(box);
     box.append(h('label', { class: 've-all' }, h('input', { type: 'checkbox', checked: applyAll || null, 'aria-label': 'Apply to all like this', onchange: (e) => { applyAll = e.target.checked; paintPanel(); } }), h('span', {}, 'Apply to all ', h('b', {}, `like this (${groupSelector()})`), ' — every matching element on the page')));
     if (sel.text !== null && !applyAll) { const t = h('textarea', { class: 'sql', rows: 2, 'aria-label': 'Text', oninput: (e) => setText(e.target.value) }); t.value = edits.get(sel.selector)?.text ?? sel.text; box.append(h('label', { class: 'lbl small' }, 'Text', t)); }
     box.append(

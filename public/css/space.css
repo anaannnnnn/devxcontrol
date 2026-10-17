@@ -421,3 +421,12 @@ dl.kv { padding: 12px 16px 16px; margin: 0; }
   .ve-row { grid-template-columns: 1fr auto; } .ve-row > span { grid-column: 1 / -1; }
   .gal { grid-template-columns: 1fr 1fr; } .ve-axes { grid-template-columns: 1fr; }
 }
+
+/* Visual editor — size-locked restyle gallery */
+.ve-restyle-head{display:flex;align-items:baseline;gap:8px;margin-top:4px}
+.ve-restyle{margin:6px 0 2px}
+.ve-swatch{display:flex;flex-direction:column;align-items:stretch;gap:5px;padding:7px;background:var(--panel,#12101d);border:1px solid var(--line,rgba(180,140,255,.18));border-radius:11px;cursor:pointer;transition:border-color .15s,transform .1s}
+.ve-swatch:hover{border-color:var(--accent,#8b5cff);transform:translateY(-1px)}
+.ve-swatch.on{border-color:var(--accent,#8b5cff);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent,#8b5cff) 40%,transparent)}
+.ve-swatch > span:first-child{height:30px;border-radius:7px}
+.ve-swatch-cap{font-size:11px;color:var(--muted,#9a93b8);text-align:center}
