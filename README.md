@@ -2,13 +2,24 @@
 
 One dashboard for every DevX app: live status, start/stop/restart, logs, database browser and editor, GitHub updates with optional auto-pull, encrypted credential vault, backups, TLS/DNS checks and alerts.
 
-## Install (on the server)
-    tar xzf devx-control.tar.gz && cd devx-control && bash install.sh
-Then open https://devxpert.shop
+## Install (any OS)
 
-**DNS (GoDaddy):** `A @ YOUR_SERVER_IP` and `A www YOUR_SERVER_IP`. Delete any "Parked" A record. HTTPS is issued automatically once DNS resolves.
+DevX Control has no npm dependencies. It needs **Node 20+** and, to manage containers, **Docker** (Docker Desktop on Windows and macOS).
 
-**Sign in:** users `anan` and `subunu`, first-time password is set by `INIT_PASSWORD` (printed by `install.sh`). Change it on the Account page straight away and turn on two-step sign-in. This dashboard controls the whole server.
+| System | Command |
+|---|---|
+| **Windows** (PowerShell) | `git clone https://github.com/anaannnnnn/devxcontrol; cd devxcontrol; .\install.ps1` |
+| **macOS / Ubuntu / any Linux**, native | `git clone https://github.com/anaannnnnn/devxcontrol && cd devxcontrol && npm run setup && npm start` |
+| **macOS / Linux**, in Docker | `git clone https://github.com/anaannnnnn/devxcontrol && cd devxcontrol && bash install.sh` |
+| **Try it with fake data** | `npm run demo` then sign in as `admin` / `Demo@12345` |
+
+Then open http://localhost:3000. Setup creates a `.env` with fresh secrets and prints a first-time admin password once. Change it on the Account page and turn on two-step sign-in. This dashboard controls Docker on the machine, so do not expose it to the internet without HTTPS.
+
+- **Windows in Docker:** use the native route above, or run `install.sh` inside WSL2.
+- **Public HTTPS:** `DOMAIN=panel.example.com bash install.sh` adds the site to an existing Caddy container named `caddy`; point the domain's DNS A record at the machine.
+- **Keep it running:** Linux, a systemd unit or the Docker install (`restart: unless-stopped`); macOS, launchd; Windows, a Task Scheduler task running `node server.js`.
+- **Settings** (all optional, in `.env`): `PORT`, `APPS_DIR` (default `~/devx-apps`), `DATA_DIR`, `BACKUP_DIR`, `CADDYFILE`, `INIT_USERS`, `GITHUB_TOKEN`.
+- **Apps:** none are registered at first. Add them from the dashboard (Create or Onboard), or list them in `apps.json`.
 
 ## Features
 - **Fleet:** radar, health, CPU/memory, response history, start/stop/restart per app.
@@ -25,7 +36,7 @@ Then open https://devxpert.shop
 - Adding an app: edit `apps.json`, then `docker compose up -d --build`.
 - The Docker socket is root-equivalent on the host. Keep the password strong and two-step on.
 - SQLite editing uses a small helper image (`devx-sqlite:1`, built on first use) that mounts the app's volume.
-- Demo: `npm run demo` (sign in as anan with the demo password in package.json). Tests: `npm test`. Smoke test: `bash test/api.smoke.sh`. API: `/openapi.yaml`.
+- Demo: `npm run demo` (sign in as admin / Demo@12345). Tests: `npm test`. Smoke test: `bash test/api.smoke.sh`. API: `/openapi.yaml`.
 - Not yet run against a real Docker daemon, a real Postgres or a real SQLite volume. Try the database tab on a small app first.
 
 ## Autopilot, Studio, Onboard (real data)

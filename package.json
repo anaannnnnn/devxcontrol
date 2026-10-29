@@ -4,12 +4,13 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "setup": "node scripts/setup.mjs",
     "start": "node server.js",
-    "demo": "DEMO=1 INIT_USERS=anan,subunu INIT_PASSWORD=Devx@2026 node server.js",
+    "demo": "node scripts/demo.mjs",
     "test": "node --test test/*.test.js"
   },
   "engines": {
     "node": ">=20"
   },
-  "description": "Fleet console for the DevX VPS (zero dependencies)"
+  "description": "Self-hosted control panel for Docker apps and servers (zero dependencies; Windows, macOS, Linux)"
 }

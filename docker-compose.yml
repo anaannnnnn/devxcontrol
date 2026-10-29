@@ -7,17 +7,19 @@ services:
     env_file: .env
     environment:
       LEDGER_URL: http://ledger:4180
-      APPS_DIR: ${HOME_DIR}/apps
-      BACKUP_DIR: ${HOME_DIR}/backups
-      CADDYFILE: ${HOME_DIR}/caddy/Caddyfile
+      APPS_DIR: ${HOME_DIR:?run install.sh first}/apps
+      BACKUP_DIR: ${HOME_DIR:?run install.sh first}/backups
+      CADDYFILE: ${HOME_DIR:?run install.sh first}/caddy/Caddyfile
     user: "1000:1000"
-    group_add: ["${DOCKER_GID}"]
+    group_add: ["${DOCKER_GID:-0}"]
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ${HOME_DIR}/apps:${HOME_DIR}/apps
-      - ${HOME_DIR}/backups:${HOME_DIR}/backups
-      - ${HOME_DIR}/caddy:${HOME_DIR}/caddy
+      - ${HOME_DIR:?run install.sh first}/apps:${HOME_DIR:?run install.sh first}/apps
+      - ${HOME_DIR:?run install.sh first}/backups:${HOME_DIR:?run install.sh first}/backups
+      - ${HOME_DIR:?run install.sh first}/caddy:${HOME_DIR:?run install.sh first}/caddy
       - control-data:/data
+    ports:
+      - "${BIND:-127.0.0.1}:${PORT:-3000}:3000"
     networks: [web]
     mem_limit: 384m
     cpus: 0.5

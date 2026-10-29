@@ -1,5 +1,7 @@
 // DevX Control - fleet console for the DevX VPS. API is versioned under /api/v1 and documented in openapi.yaml.
+import './lib/loadenv.js';
 import express from './lib/mini.js';
+import os from 'node:os';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -51,7 +53,7 @@ const env = process.env;
 const DEMO = !!env.DEMO;
 const PORT = +env.PORT || 3000;
 const DATA_DIR = env.DATA_DIR || path.join(here, 'data');
-const APPS_DIR = env.APPS_DIR || '/home/anan/apps';
+const APPS_DIR = env.APPS_DIR || path.join(os.homedir(), 'devx-apps');
 const BACKUP_DIR = env.BACKUP_DIR || path.join(DATA_DIR, 'backups');
 
 const secret = env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
