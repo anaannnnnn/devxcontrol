@@ -33,5 +33,5 @@ test('writeEnv changes one existing key and keeps the rest', () => {
   assert.equal(writeEnv(f, 'MISSING', 'x'), false);
   assert.equal(fs.readFileSync(f, 'utf8'), '# note\nYOUTUBE_API_KEY=AIza-test\nexport PORT=4000\n');
   assert.equal(readEnv(f).find((e) => e.key === 'YOUTUBE_API_KEY').value, 'AIza-test');
-  assert.equal(fs.statSync(f).mode & 0o777, 0o600);
+  if (process.platform !== 'win32') assert.equal(fs.statSync(f).mode & 0o777, 0o600); // Windows has no POSIX modes
 });

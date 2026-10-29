@@ -25,7 +25,7 @@ function fixture() {
   // pretend docker: tests pass, semgrep reports the issue until orders.js contains "reduce((a, b) => a + b, 0)"
   const exec = (cmd, args, o) => {
     if (cmd !== 'docker') return run(cmd, args, o);
-    const dir = args[args.indexOf('-v') + 1].split(':')[0]; const img = args.find((a) => /^(node|semgrep|hadolint|python)/.test(a));
+    const dir = args[args.indexOf('-v') + 1].replace(/:\/.*$/, ''); const img = args.find((a) => /^(node|semgrep|hadolint|python)/.test(a));
     if (img?.startsWith('semgrep')) { const src = fs.readFileSync(path.join(dir, 'orders.js'), 'utf8'); fixed = src.includes(', 0)'); return Promise.resolve({ ok: true, out: JSON.stringify(fixed ? { results: [] } : semgrepHit), err: '' }); }
     if (args.join(' ').includes('npm audit')) return Promise.resolve({ ok: true, out: JSON.stringify({ vulnerabilities: {}, metadata: { vulnerabilities: {} } }), err: '' });
     return Promise.resolve({ ok: true, out: '# pass 3\n# fail 0\n', err: '' });
