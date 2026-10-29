@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Client room</title>
+  <link rel="stylesheet" href="/css/space.css">
+  <link rel="stylesheet" href="/css/orbit.css">
+</head>
+<body>
+  <main class="panel hud" id="room" style="width:min(440px,calc(100% - 32px));margin:24px auto;padding:20px;display:grid;gap:12px">
+    <h1>Client room</h1>
+    <p class="muted">Your app only. No other clients, no logs, no database.</p>
+    <form id="f" style="display:grid;gap:10px">
+      <label>Username <input class="field" name="user" autocomplete="username" required></label>
+      <label>Password <input class="field" name="password" type="password" autocomplete="current-password" required></label>
+      <button class="btn" type="submit">Sign in</button>
+    </form>
+    <div id="out"></div>
+  </main>
+  <script type="module" src="/js/client.js"></script>
+</body>
+</html>

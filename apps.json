@@ -1,0 +1,11 @@
+{
+  "serverIp": "",
+  "apps": [],
+  "infra": {
+    "caddy": "caddy",
+    "protected": [
+      "caddy",
+      "devx-control"
+    ]
+  }
+}

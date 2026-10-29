@@ -1,0 +1,15 @@
+{
+  "name": "devx-control",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "demo": "DEMO=1 INIT_USERS=anan,subunu INIT_PASSWORD=Devx@2026 node server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "description": "Fleet console for the DevX VPS (zero dependencies)"
+}

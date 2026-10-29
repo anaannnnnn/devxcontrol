@@ -1,0 +1,10 @@
+{
+  "id": "logistics",
+  "label": "Logistics",
+  "features": [
+    { "id": "dispatch", "label": "Dispatch board", "effort": "Med", "benefit": "See who is on which job", "files": ["dispatch", "driver"], "tables": ["jobs", "routes", "drivers"], "words": ["dispatch", "driver"] },
+    { "id": "tracking", "label": "Live tracking", "effort": "High", "benefit": "Customers stop calling for ETAs", "files": ["track", "map"], "tables": ["locations", "pings"], "words": ["track", "live map"] },
+    { "id": "pod", "label": "Proof of delivery", "effort": "Med", "benefit": "Closes a job with evidence", "files": ["pod", "signature"], "tables": ["deliveries", "proofs"], "words": ["proof of delivery", "signature"] },
+    { "id": "invoicing", "label": "Invoicing", "effort": "Med", "benefit": "Bill the run the day it finishes", "files": ["invoice"], "tables": ["invoices"], "words": ["invoice"] }
+  ]
+}

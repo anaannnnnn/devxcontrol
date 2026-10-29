@@ -1,0 +1,656 @@
+// DevX Boutique OS — production data model (PostgreSQL)
+// One source of truth powering both the Customer Boutique and the Jeweller CRM.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────── Enums ───────────────────────
+enum Role {
+  PLATFORM_ADMIN
+  OWNER
+  COMPANY_ADMIN
+  BRANCH_MANAGER
+  SALES_STAFF
+  INVENTORY_STAFF
+  ANALYST
+}
+
+enum PriceMode {
+  FIXED
+  INQUIRY
+}
+
+enum InquiryStatus {
+  NEW
+  QUALIFIED
+  QUOTED
+  APPOINTMENT
+  CONVERTED
+  LOST
+}
+
+enum AppointmentStatus {
+  REQUESTED
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum QuoteStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PAID
+  PARTIAL
+  CANCELLED
+}
+
+enum GoldSource {
+  SEED
+  API
+  MANUAL
+}
+
+enum OfferStatus {
+  DRAFT
+  ACTIVE
+  EXPIRED
+}
+
+// ─────────────────────── Core tenancy ───────────────────────
+model Tenant {
+  id           String   @id @default(cuid())
+  name         String
+  slug         String   @unique
+  logoUrl      String?
+  currency     String   @default("AED")
+  makingCharge Float    @default(12) // default % making charge
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  users        User[]
+  branches     Branch[]
+  categories   Category[]
+  collections  Collection[]
+  products     Product[]
+  customers    Customer[]
+  inquiries    Inquiry[]
+  appointments Appointment[]
+  quotations   Quotation[]
+  invoices     Invoice[]
+  suppliers    Supplier[]
+  offers       Offer[]
+  goldPrices   GoldPriceObservation[]
+  auditLogs    AuditLog[]
+  callTasks    CallTask[]
+  offerRequests OfferRequest[]
+  goldPlans    GoldPlan[]
+}
+
+model User {
+  id           String    @id @default(cuid())
+  tenantId     String
+  branchId     String?
+  name         String
+  email        String
+  passwordHash String
+  role         Role      @default(SALES_STAFF)
+  active       Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  tenant             Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch             Branch?       @relation(fields: [branchId], references: [id])
+  assignedInquiries  Inquiry[]     @relation("InquiryAssignee")
+  assignedAppointmns Appointment[] @relation("AppointmentStaff")
+  quotations         Quotation[]
+  invoices           Invoice[]
+  auditLogs          AuditLog[]
+  callTasks          CallTask[]    @relation("CallAssignee")
+  offersRequested    OfferRequest[] @relation("OfferRequester")
+  offersDecided      OfferRequest[] @relation("OfferApprover")
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+}
+
+model Branch {
+  id        String   @id @default(cuid())
+  tenantId  String
+  name      String
+  city      String
+  address   String?
+  phone     String?
+  hours     String?  @default("10:00 – 22:00")
+  lat       Float?
+  lng       Float?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  users        User[]
+  inventory    Inventory[]
+  inquiries    Inquiry[]
+  appointments Appointment[]
+  quotations   Quotation[]
+  invoices     Invoice[]
+
+  @@index([tenantId])
+}
+
+// ─────────────────────── Catalog ───────────────────────
+model Category {
+  id       String  @id @default(cuid())
+  tenantId String
+  name     String
+  slug     String
+  icon     String?
+  sort     Int     @default(0)
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  products Product[]
+
+  @@unique([tenantId, slug])
+  @@index([tenantId])
+}
+
+model Collection {
+  id          String  @id @default(cuid())
+  tenantId    String
+  name        String
+  slug        String
+  description String?
+  heroImage   String?
+  featured    Boolean @default(false)
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  products Product[]
+
+  @@unique([tenantId, slug])
+  @@index([tenantId])
+}
+
+model Product {
+  id           String    @id @default(cuid())
+  tenantId     String
+  sku          String
+  name         String
+  slug         String
+  description  String?
+  categoryId   String?
+  collectionId String?
+
+  // Commercial
+  priceMode    PriceMode @default(FIXED)
+  basePrice    Float     @default(0) // AED
+  makingCharge Float     @default(0) // %
+  discount     Float     @default(0) // %
+
+  // Metal
+  metal        String    @default("Gold")
+  karat        Int       @default(22)
+  metalColor   String    @default("Yellow")
+  grossWeight  Float     @default(0) // grams
+  netWeight    Float     @default(0) // grams
+
+  // Stones
+  stoneType    String?
+  stoneCount   Int       @default(0)
+  totalCarat   Float     @default(0)
+
+  // Dimensions / discovery
+  dimensions   String?
+  gender       String    @default("Unisex") // Women / Men / Unisex
+  occasion     String?
+  tags         String[]  @default([])
+
+  // Trust
+  certNumber   String?
+  certIssuer   String?
+  warranty     String?   @default("Lifetime service & buy-back")
+
+  featured     Boolean   @default(false)
+  isNew        Boolean   @default(false)
+  active       Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  tenant     Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  category   Category?      @relation(fields: [categoryId], references: [id])
+  collection Collection?    @relation(fields: [collectionId], references: [id])
+  media      ProductMedia[]
+  inventory  Inventory[]
+  tryOnAsset TryOnAsset?
+  model3d    Model3DAsset?
+
+  @@unique([tenantId, sku])
+  @@index([tenantId])
+  @@index([categoryId])
+  @@index([collectionId])
+}
+
+model ProductMedia {
+  id        String  @id @default(cuid())
+  productId String
+  url       String
+  kind      String  @default("image") // image | video | certificate
+  isPrimary Boolean @default(false)
+  sort      Int     @default(0)
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+}
+
+model Inventory {
+  id        String   @id @default(cuid())
+  productId String
+  branchId  String
+  quantity  Int      @default(0)
+  reserved  Int      @default(0)
+  sold      Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  branch  Branch  @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, branchId])
+  @@index([branchId])
+}
+
+// ─────────────────────── Customers (Boutique auth) ───────────────────────
+model Customer {
+  id             String    @id @default(cuid())
+  tenantId       String
+  name           String
+  email          String?
+  phone          String
+  passwordHash   String?
+  savedProductIds String[] @default([])
+  segment        String    @default("new") // new | repeat | high_value | inactive
+  marketingConsent Boolean @default(false)
+  notes          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  inquiries    Inquiry[]
+  appointments Appointment[]
+  quotations   Quotation[]
+  invoices     Invoice[]
+  callTasks    CallTask[]
+  offerRequests OfferRequest[]
+  goldPlans    GoldPlan[]
+
+  @@unique([tenantId, phone])
+  @@index([tenantId])
+}
+
+// ─────────────────────── Commerce & CRM ───────────────────────
+model Inquiry {
+  id           String        @id @default(cuid())
+  tenantId     String
+  reference    String
+  customerId   String?
+  branchId     String?
+  assignedToId String?
+  status       InquiryStatus @default(NEW)
+  source       String        @default("boutique") // boutique | walk_in | whatsapp | phone
+  budget       Float?
+  occasion     String?
+  notes        String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  tenant     Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer   Customer?     @relation(fields: [customerId], references: [id])
+  branch     Branch?       @relation(fields: [branchId], references: [id])
+  assignedTo User?         @relation("InquiryAssignee", fields: [assignedToId], references: [id])
+  items      InquiryItem[]
+  quotations Quotation[]
+
+  @@index([tenantId])
+  @@index([status])
+}
+
+model InquiryItem {
+  id          String @id @default(cuid())
+  inquiryId   String
+  productId   String?
+  productName String
+  quantity    Int    @default(1)
+  note        String?
+
+  inquiry Inquiry @relation(fields: [inquiryId], references: [id], onDelete: Cascade)
+
+  @@index([inquiryId])
+}
+
+model Appointment {
+  id         String            @id @default(cuid())
+  tenantId   String
+  reference  String
+  customerId String?
+  branchId   String
+  staffId    String?
+  reason     String            @default("Showroom visit")
+  scheduledAt DateTime
+  status     AppointmentStatus @default(REQUESTED)
+  notes      String?
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer Customer? @relation(fields: [customerId], references: [id])
+  branch   Branch    @relation(fields: [branchId], references: [id])
+  staff    User?     @relation("AppointmentStaff", fields: [staffId], references: [id])
+
+  @@index([tenantId])
+  @@index([branchId])
+}
+
+model Quotation {
+  id         String      @id @default(cuid())
+  tenantId   String
+  reference  String
+  inquiryId  String?
+  customerId String?
+  branchId   String?
+  createdById String?
+  status     QuoteStatus @default(DRAFT)
+  subtotal   Float       @default(0)
+  makingTotal Float      @default(0)
+  discount   Float       @default(0)
+  taxRate    Float       @default(5) // UAE VAT %
+  taxTotal   Float       @default(0)
+  total      Float       @default(0)
+  validUntil DateTime?
+  shareToken String      @unique @default(cuid())
+  notes      String?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  tenant    Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  inquiry   Inquiry?    @relation(fields: [inquiryId], references: [id])
+  customer  Customer?   @relation(fields: [customerId], references: [id])
+  branch    Branch?     @relation(fields: [branchId], references: [id])
+  createdBy User?       @relation(fields: [createdById], references: [id])
+  items     QuoteItem[]
+  invoice   Invoice?
+
+  @@index([tenantId])
+}
+
+model QuoteItem {
+  id           String @id @default(cuid())
+  quotationId  String
+  productId    String?
+  description  String
+  metalValue   Float  @default(0)
+  makingValue  Float  @default(0)
+  stoneValue   Float  @default(0)
+  quantity     Int    @default(1)
+  lineTotal    Float  @default(0)
+
+  quotation Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+
+  @@index([quotationId])
+}
+
+model Invoice {
+  id          String        @id @default(cuid())
+  tenantId    String
+  reference   String
+  quotationId String?       @unique
+  customerId  String?
+  branchId    String?
+  createdById String?
+  status      InvoiceStatus @default(DRAFT)
+  subtotal    Float         @default(0)
+  taxRate     Float         @default(5)
+  taxTotal    Float         @default(0)
+  total       Float         @default(0)
+  amountPaid  Float         @default(0)
+  issuedAt    DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  tenant    Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  quotation Quotation?    @relation(fields: [quotationId], references: [id])
+  customer  Customer?     @relation(fields: [customerId], references: [id])
+  branch    Branch?       @relation(fields: [branchId], references: [id])
+  createdBy User?         @relation(fields: [createdById], references: [id])
+  items     InvoiceItem[]
+
+  @@index([tenantId])
+}
+
+model InvoiceItem {
+  id          String @id @default(cuid())
+  invoiceId   String
+  description String
+  quantity    Int    @default(1)
+  unitPrice   Float  @default(0)
+  lineTotal   Float  @default(0)
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+}
+
+model Supplier {
+  id         String   @id @default(cuid())
+  tenantId   String
+  name       String
+  contact    String?
+  phone      String?
+  email      String?
+  categories String[] @default([])
+  payable    Float    @default(0)
+  createdAt  DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+model Offer {
+  id          String      @id @default(cuid())
+  tenantId    String
+  title       String
+  description String?
+  image       String?
+  discount    Float       @default(0)
+  code        String?
+  status      OfferStatus @default(ACTIVE)
+  validFrom   DateTime    @default(now())
+  validUntil  DateTime?
+  createdAt   DateTime    @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+model GoldPriceObservation {
+  id        String     @id @default(cuid())
+  tenantId  String
+  karat     Int        @default(24)
+  pricePerGram Float // AED / gram
+  currency  String     @default("AED")
+  source    GoldSource @default(SEED)
+  observedAt DateTime  @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, karat, observedAt])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  tenantId  String
+  userId    String?
+  action    String
+  entity    String
+  entityId  String?
+  meta      String?
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User?  @relation(fields: [userId], references: [id])
+
+  @@index([tenantId])
+}
+
+// ─────────────────────── Retention / telecalling ───────────────────────
+// A follow-up call for the retention team. Customer name/phone are snapshotted so
+// tasks raised from demo insights (no customer row) still work.
+model CallTask {
+  id            String    @id @default(cuid())
+  tenantId      String
+  customerId    String?
+  customerName  String
+  customerPhone String?
+  assignedToId  String?
+  source        String    @default("manual") // churn | lead | manual
+  reason        String
+  tier          String?
+  priority      String    @default("MEDIUM") // HIGH | MEDIUM | LOW
+  status        String    @default("OPEN")   // OPEN | DONE
+  outcome       String?   // REACHED | NO_ANSWER | CALLBACK | VISIT_BOOKED | NOT_INTERESTED | WRONG_NUMBER
+  notes         String?
+  segment       String?   // ONE_TIME | SECOND_TIME | RECURRING | CONTINUOUS
+  lostReason    String?   // why the client hasn't bought (from the call)
+  feedback      String?   // what the client said / what we could offer
+  attempts      Int       @default(0)
+  dueAt         DateTime  @default(now())
+  completedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer   Customer? @relation(fields: [customerId], references: [id])
+  assignedTo User?     @relation("CallAssignee", fields: [assignedToId], references: [id])
+  offers     OfferRequest[]
+
+  @@index([tenantId, status])
+  @@index([assignedToId])
+}
+
+// An offer a telecaller wants to give a client (e.g. 10% off making). Small ones are
+// auto-approved within policy; the rest wait for a manager.
+model OfferRequest {
+  id            String    @id @default(cuid())
+  tenantId      String
+  reference     String
+  callTaskId    String?
+  customerId    String?
+  customerName  String
+  customerPhone String?
+  type          String    // MAKING_DISCOUNT | PRICE_DISCOUNT | GOLD_RATE_LOCK | FREE_GIFT | BONUS_GOLD
+  value         Float     @default(0) // % for discounts, AED for gift/bonus, days for rate lock
+  reason        String
+  status        String    @default("PENDING") // PENDING | APPROVED | REJECTED | REDEEMED | EXPIRED
+  autoApproved  Boolean   @default(false)
+  requestedById String?
+  decidedById   String?
+  decisionNote  String?
+  decidedAt     DateTime?
+  validUntil    DateTime?
+  code          String?
+  redeemedAt    DateTime?
+  redeemedAmount Float?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  callTask    CallTask? @relation(fields: [callTaskId], references: [id])
+  customer    Customer? @relation(fields: [customerId], references: [id])
+  requestedBy User?     @relation("OfferRequester", fields: [requestedById], references: [id])
+  decidedBy   User?     @relation("OfferApprover", fields: [decidedById], references: [id])
+
+  @@index([tenantId, status])
+}
+
+// Gold savings scheme (Tanishq-style): a monthly instalment plan with a maturity bonus,
+// or a gold accumulation plan where each payment buys grams at the day's rate.
+model GoldPlan {
+  id            String    @id @default(cuid())
+  tenantId      String
+  reference     String
+  customerId    String
+  type          String    // INSTALMENT | ACCUMULATION
+  monthlyAmount Float
+  tenureMonths  Int       @default(11)
+  bonusPct      Float     @default(75) // INSTALMENT: % of one instalment added at maturity
+  karat         Int       @default(22)
+  status        String    @default("ACTIVE") // ACTIVE | MATURED | REDEEMED | CLOSED
+  startDate     DateTime  @default(now())
+  maturityDate  DateTime
+  nominee       String?
+  notes         String?
+  createdById   String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer Customer          @relation(fields: [customerId], references: [id])
+  payments GoldPlanPayment[]
+
+  @@index([tenantId, status])
+}
+
+model GoldPlanPayment {
+  id         String   @id @default(cuid())
+  planId     String
+  amount     Float
+  goldRate   Float    // AED per gram at the time of payment
+  grams      Float
+  method     String   @default("CASH") // CASH | CARD | TRANSFER | ONLINE
+  paidAt     DateTime @default(now())
+
+  plan GoldPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@index([planId])
+}
+
+// Transparent try-on cut-out made in the CRM Try-on Studio. Served as a PNG by
+// /api/public/tryon-assets/:productId; its anchor/size metadata lives on the
+// product's "tryon:<type>" media row URL (see lib/tryon.ts).
+model TryOnAsset {
+  productId String   @id
+  png       Bytes
+  width     Int
+  height    Int
+  updatedAt DateTime @updatedAt
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+// Real 3D model (.glb) uploaded in the CRM for "View in 3D" and 3D try-on. Served by
+// /api/public/models/:productId; which piece of the file and the ring size ride on the
+// product's "model3d" media row URL.
+model Model3DAsset {
+  productId String   @id
+  glb       Bytes
+  fileName  String
+  updatedAt DateTime @updatedAt
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+}

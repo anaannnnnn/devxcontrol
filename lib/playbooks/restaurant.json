@@ -1,0 +1,11 @@
+{
+  "id": "restaurant",
+  "label": "Restaurant",
+  "features": [
+    { "id": "ordering", "label": "Online ordering", "effort": "Med", "benefit": "Takes an order without a phone call", "files": ["order", "cart", "checkout"], "tables": ["orders", "order_items"], "words": ["add to cart", "checkout", "place order"] },
+    { "id": "booking", "label": "Table booking", "effort": "Med", "benefit": "Fills seats before the door", "files": ["reserv", "booking"], "tables": ["reservations", "bookings"], "words": ["book a table", "reservation"] },
+    { "id": "qrmenu", "label": "QR menu", "effort": "Low", "benefit": "Menu on the table without a reprint", "files": ["menu", "qr"], "tables": ["menu_items", "dishes"], "words": ["qr", "our menu"] },
+    { "id": "loyalty", "label": "Loyalty", "effort": "Med", "benefit": "Repeat visits without a discount blast", "files": ["loyalty", "reward"], "tables": ["loyalty", "rewards"], "words": ["loyalty", "reward points"] },
+    { "id": "whatsapp", "label": "WhatsApp order alerts", "effort": "Low", "benefit": "Kitchen hears a new order immediately", "files": ["whatsapp"], "tables": [], "words": ["whatsapp"] }
+  ]
+}

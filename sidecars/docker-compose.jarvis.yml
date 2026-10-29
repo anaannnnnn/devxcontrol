@@ -1,0 +1,44 @@
+# Jarvis sidecars overlay. Deploy separately from the main stack so the live DevX Control
+# compose stays untouched. Sidecars sit on an INTERNAL network (no internet, no published
+# ports); models are already in the named volumes. DevX Control joins this network to call them.
+#
+# One-time setup:
+#   docker network create --internal jarvis-net
+#   docker compose -f sidecars/docker-compose.jarvis.yml up -d
+#   docker network connect jarvis-net devx-control          # let Control reach the sidecars
+# Then set on devx-control (env/.env), if not using the default container names:
+#   JARVIS_STT_URL=http://jarvis-stt:8077  JARVIS_TTS_URL=http://jarvis-tts:8078
+services:
+  jarvis-stt:
+    image: jarvis-stt:dev
+    container_name: jarvis-stt
+    restart: unless-stopped
+    environment:
+      STT_MODEL: base.en        # faster; set "small" for max accuracy (already in the volume)
+      STT_COMPUTE: int8
+    networks: [jarvis-net]
+    volumes:
+      - jarvis-stt-models:/models
+    mem_limit: 2g
+    cpus: 2
+    pids_limit: 256
+    security_opt: ["no-new-privileges:true"]
+  jarvis-tts:
+    image: jarvis-tts:dev
+    container_name: jarvis-tts
+    restart: unless-stopped
+    networks: [jarvis-net]
+    volumes:
+      - jarvis-tts-models:/models
+    mem_limit: 2g
+    cpus: 2
+    pids_limit: 256
+    security_opt: ["no-new-privileges:true"]
+networks:
+  jarvis-net:
+    external: true
+volumes:
+  jarvis-stt-models:
+    external: true
+  jarvis-tts-models:
+    external: true

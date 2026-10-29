@@ -1,0 +1,10 @@
+{
+  "id": "retail",
+  "label": "Retail",
+  "features": [
+    { "id": "catalog", "label": "Product catalog", "effort": "Med", "benefit": "Shop without a spreadsheet", "files": ["product", "catalog", "shop"], "tables": ["products", "skus"], "words": ["add to bag", "shop"] },
+    { "id": "cart", "label": "Cart and checkout", "effort": "Med", "benefit": "A sale finishes in the browser", "files": ["cart", "checkout"], "tables": ["orders", "carts"], "words": ["checkout", "cart"] },
+    { "id": "inventory", "label": "Inventory", "effort": "Med", "benefit": "Do not sell what is not on the shelf", "files": ["inventory", "stock"], "tables": ["inventory", "stock"], "words": ["in stock", "inventory"] },
+    { "id": "reviews", "label": "Product reviews", "effort": "Low", "benefit": "Trust next to the price", "files": ["review"], "tables": ["reviews"], "words": ["reviews", "rating"] }
+  ]
+}

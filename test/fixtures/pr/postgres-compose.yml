@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: devx_boutique_pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: devx
+      POSTGRES_PASSWORD: devx
+      POSTGRES_DB: devx_boutique
+    ports:
+      - "5433:5432"
+    volumes:
+      - devx_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U devx -d devx_boutique"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  devx_pgdata:

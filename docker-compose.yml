@@ -1,0 +1,30 @@
+services:
+  devx-control:
+    build: .
+    image: devx-control:1.0.0
+    container_name: devx-control
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      LEDGER_URL: http://ledger:4180
+      APPS_DIR: ${HOME_DIR}/apps
+      BACKUP_DIR: ${HOME_DIR}/backups
+      CADDYFILE: ${HOME_DIR}/caddy/Caddyfile
+    user: "1000:1000"
+    group_add: ["${DOCKER_GID}"]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${HOME_DIR}/apps:${HOME_DIR}/apps
+      - ${HOME_DIR}/backups:${HOME_DIR}/backups
+      - ${HOME_DIR}/caddy:${HOME_DIR}/caddy
+      - control-data:/data
+    networks: [web]
+    mem_limit: 384m
+    cpus: 0.5
+    security_opt: ["no-new-privileges:true"]
+    working_dir: /app
+volumes:
+  control-data:
+networks:
+  web:
+    external: true

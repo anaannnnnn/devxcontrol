@@ -1,0 +1,34 @@
+{
+  "name": "devx-boutique-os",
+  "version": "1.0.0",
+  "private": true,
+  "description": "DevX Boutique OS — AI-powered Jewellery Commerce & Retail Intelligence Platform (Customer Digital Boutique + Jeweller CRM)",
+  "workspaces": [
+    "server",
+    "apps/boutique",
+    "apps/crm"
+  ],
+  "scripts": {
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "server:dev": "npm run dev -w server",
+    "boutique:dev": "npm run dev -w apps/boutique",
+    "crm:dev": "npm run dev -w apps/crm",
+    "dev": "concurrently -n server,boutique,crm -c green,magenta,cyan \"npm:server:dev\" \"npm:boutique:dev\" \"npm:crm:dev\"",
+    "prisma:generate": "npm run prisma:generate -w server",
+    "prisma:migrate": "npm run prisma:migrate -w server",
+    "db:seed": "npm run db:seed -w server",
+    "build": "npm run build -w server && npm run build -w apps/boutique && npm run build -w apps/crm",
+    "setup": "npm install && npm run prisma:generate && npm run prisma:migrate && npm run db:seed",
+    "bootstrap": "bash bootstrap.sh"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "motion": "^13.4.3"
+  }
+}
