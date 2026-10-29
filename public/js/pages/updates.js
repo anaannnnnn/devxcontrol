@@ -3,17 +3,34 @@ import { h, clear, icon, fmt, toast, confirmDialog, actionBtn, modal } from '../
 import { api, stream } from '../api.js';
 import { terminal } from '../term.js';
 import { emptyState } from './shared.js';
+import { chooseMongo, switchFlow } from './mongo.js';
 
 /** Run a redeploy job and stream it into a terminal modal. Resolves with the exit code. */
-export async function deployWithLog(app) {
+export async function deployWithLog(app, { path = null, body = null, title = 'Updating' } = {}) {
   const term = terminal({ max: 1500 }); term.el.style.height = '320px';
   const status = h('span', { class: 'chip' }, 'Running');
   const closeBtn = h('button', { class: 'btn', disabled: true, onclick: () => m.close() }, 'Close');
-  const box = h('div', { class: 'dialog wide', role: 'dialog', 'aria-modal': 'true', 'aria-label': `Deploying ${app.name}` },
-    h('div', { class: 'row' }, h('h2', {}, `Updating ${app.name}`), h('span', { class: 'grow' }), status), term.el, h('div', { class: 'acts' }, closeBtn));
+  const box = h('div', { class: 'dialog wide', role: 'dialog', 'aria-modal': 'true', 'aria-label': `${title} ${app.name}` },
+    h('div', { class: 'row' }, h('h2', {}, `${title} ${app.name}`), h('span', { class: 'grow' }), status), term.el, h('div', { class: 'acts' }, closeBtn));
   const m = modal(box);
   try {
-    const { job } = await api(`/apps/${app.id}/redeploy`, { method: 'POST' });
+    let started;
+    for (;;) {
+      try { started = await api(path || `/apps/${app.id}/redeploy`, { method: 'POST', ...(body ? { body } : {}) }); break; }
+      catch (e) {
+        // The new code uses MongoDB and nothing is chosen yet: ask, then try again.
+        if (e.problem?.code === 'mongo-switch') {
+          m.scrim.style.display = 'none'; const code = await switchFlow(app); m.scrim.style.display = '';
+          term.add(code === null ? 'Update cancelled: the app was not switched to MongoDB.' : code === 0 ? 'Switched to MongoDB and updated.' : 'The switch did not finish. See its log.');
+          status.textContent = code === 0 ? 'Finished' : 'Cancelled'; closeBtn.disabled = false; return code ?? 1;
+        }
+        if (e.problem?.code !== 'mongo-select') throw e;
+        m.scrim.style.display = 'none'; const ok = await chooseMongo(app, e.problem.mongo); m.scrim.style.display = '';
+        if (!ok) { term.add('Update cancelled: no MongoDB was chosen. Nothing was changed.'); status.textContent = 'Cancelled'; closeBtn.disabled = false; return 1; }
+        term.add('MongoDB chosen. Starting the update ...');
+      }
+    }
+    const { job } = started;
     return await new Promise((resolve) => {
       const s = stream(`/jobs/${job}/stream`, { line: (l) => term.add(l), done: ({ code }) => { s.close(); status.textContent = code === 0 ? 'Finished' : `Failed (exit ${code})`; status.className = `chip ${code === 0 ? 'ok' : 'bad'}`; closeBtn.disabled = false; resolve(code); } });
     });
@@ -59,7 +76,8 @@ export function updatesPage(ctx) {
       h('div', { class: 'upd-foot' },
         h('label', { class: 'switch', for: `ap-${r.id}`, title: 'Redeploy automatically when new commits land. Off by default.' }, sw, h('span', { class: 'sw' }), h('span', {}, 'Auto-pull')),
         h('span', { class: 'grow' }),
-        u?.dirty && u.behind > 0 && h('span', { class: 'muted small' }, 'Blocked: server has uncommitted changes'),
+        u?.dirty && u.behind > 0 && h('span', { class: 'muted small' }, 'Blocked: application files were edited on the server'),
+        u?.mongo?.uses && h('button', { class: `btn sm ${r.mongoChoice ? '' : 'primary'}`, title: 'Choose which MongoDB this app uses', onclick: async () => { if (await chooseMongo({ id: r.id, name: r.name }, u.mongo)) { toast('Saved', 'ok'); await load(); } } }, icon('db', 15), r.mongoChoice ? 'MongoDB' : 'Choose MongoDB'),
         h('button', { class: 'btn sm', disabled: !u?.checkout, onclick: async () => { try { await api(`/apps/${r.id}/git/check`, { method: 'POST' }); await load(); } catch (e) { toast(e.message, 'bad'); } } }, icon('refresh', 15), 'Check'),
         h('button', { class: `btn sm ${u?.behind ? 'primary' : ''}`, disabled: !u?.checkout || !a, onclick: async () => {
           if (!(await confirmDialog({ title: `${u.behind ? 'Pull and deploy' : 'Redeploy'} ${r.name}?`, body: 'Pulls from GitHub (fast-forward only) and rebuilds. The app restarts and may be unavailable for a minute.', confirm: u.behind ? 'Pull and deploy' : 'Redeploy' }))) return;
@@ -71,6 +89,6 @@ export function updatesPage(ctx) {
   load();
   const el = h('div', { class: 'stack' }, h('h1', { class: 'h2', style: { fontSize: '26px' } }, 'Updates'),
     h('section', { class: 'panel upd-head' }, head),
-    h('p', { class: 'muted small' }, 'Most recently changed on GitHub first. Auto-pull is off for every app until you turn it on. It only fast-forwards, and skips an app if the server copy has uncommitted changes.'), list);
+    h('p', { class: 'muted small' }, 'Most recently changed on GitHub first. Auto-pull is off for every app until you turn it on. It fast-forwards, keeps local Docker and env files, rebuilds the image without reusing the previous one, and skips an app only when application files were edited on the server.'), list);
   return { el, title: 'Updates' };
 }

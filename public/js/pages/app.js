@@ -10,15 +10,29 @@ import { credentialsPanel } from './vault.js';
 import { deployWithLog } from './updates.js';
 import { studioBody } from './studio.js';
 import { domainPicker } from './domainpick.js';
+import { kitStudio } from './kits.js';
+import { chooseMongo, mongoPanel, switchFlow } from './mongo.js';
 
 const ALL_TABS = [['overview', 'Overview', 'globe'], ['logs', 'Logs', 'terminal'], ['database', 'Database', 'table'], ['data', 'Storage', 'archive'], ['source', 'Source', 'github'], ['secrets', 'Secrets', 'key'], ['domain', 'Domain', 'globe'], ['deploy', 'Updates', 'rocket'], ['visual', 'Visual edit', 'wand'], ['look', 'Look', 'palette'], ['upgrades', 'Upgrades', 'bolt'], ['releases', 'Releases', 'diff'], ['activity', 'Activity', 'activity']];
 const panel = (title, body, right) => h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h2', {}, title), h('span', { class: 'grow' }), right), body);
 
 /** Start a long job and pipe its output into a terminal. */
-async function runJob(path, term, label, after) {
+async function runJob(path, term, label, after, meta) {
   term.reset();
   try {
-    const { job } = await api(path, { method: 'POST' });
+    let started;
+    for (;;) {
+      try { started = await api(path, { method: 'POST' }); break; }
+      catch (e) {
+        // The new code uses MongoDB and nothing is chosen yet: ask, then try again.
+        if (e.problem?.code === 'mongo-switch' && meta) { const code = await switchFlow(meta); term.add(code === null ? 'Update cancelled: the app was not switched to MongoDB.' : code === 0 ? 'Switched to MongoDB and updated.' : 'The switch did not finish. See its log.'); return code ?? 1; }
+        if (e.problem?.code !== 'mongo-select' || !meta) throw e;
+        const ok = await chooseMongo(meta, e.problem.mongo);
+        if (!ok) { term.add('Update cancelled: no MongoDB was chosen. Nothing was changed.'); return 1; }
+        term.add('MongoDB chosen. Starting the update ...');
+      }
+    }
+    const { job } = started;
     return new Promise((resolve) => {
       const s = stream(`/jobs/${job}/stream`, {
         line: (l) => term.add(l),
@@ -45,6 +59,26 @@ export function appPage(ctx) {
     if (!(await confirmDialog({ title: `Redeploy ${app.name}?`, body: 'Pulls the latest code from GitHub and rebuilds the containers. The app restarts and may be unavailable for a minute.', confirm: 'Redeploy' }))) return;
     sessionStorage.setItem('dc-run-redeploy', id); go(`/app/${id}/deploy`);
   } });
+  const rollbackBtn = () => ctx.me?.admin && actionBtn({ ic: 'refresh', label: 'Roll back', title: `Choose a saved deployment of ${app.name}`, onClick: async () => {
+    try {
+      const { data = [] } = await api(`/apps/${id}/deployments`);
+      if (!data.length) { toast('No saved deployment versions are available yet.', 'bad'); return; }
+      const select = h('select', { class: 'field', 'aria-label': 'Saved deployment' }, data.map((v) => h('option', { value: v.id }, `${v.baseline ? 'Current version · ' : ''}${v.label} · ${fmt.ago(v.at)}`)));
+      const cancel = h('button', { class: 'btn', type: 'button' }, 'Cancel');
+      const confirm = h('button', { class: 'btn danger', type: 'button' }, 'Back up and roll back');
+      const dlg = h('div', { class: 'dialog', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'rollback-title' },
+        h('h2', { id: 'rollback-title' }, `Roll back ${app.name}`),
+        h('p', { class: 'muted' }, 'Choose one of the five most recent saved versions. DevX Control will back up the current source and local database, rebuild the selected version, preserve the existing Caddy route, and check the app health.'),
+        select, h('p', { class: 'muted small' }, 'Tracking starts with the current version. New successful deployments add a rollback point automatically; older deployments that were not tracked cannot be reconstructed.'),
+        h('div', { class: 'acts' }, cancel, confirm));
+      const m = modal(dlg); cancel.addEventListener('click', () => m.close());
+      confirm.addEventListener('click', async () => {
+        m.close();
+        const code = await deployWithLog({ id, name: app.name }, { path: `/apps/${id}/rollback`, body: { deploymentId: select.value }, title: 'Rolling back' });
+        if (code === 0) { await refresh(); await loadDetail(); paintHead(); }
+      });
+    } catch (e) { toast(e.message, 'bad'); }
+  } });
   let headSig = '';
   function paintHead() {
     clear(orbSlot).append(orb(app.status));
@@ -61,7 +95,9 @@ export function appPage(ctx) {
       clear(ctas).append(
         h('a', { class: 'btn primary', href: app.urls[0].url, target: '_blank', rel: 'noopener noreferrer' }, icon('external', 16), h('span', { class: 'lab' }, `Open ${app.urls.length > 1 ? app.urls[0].label : 'site'}`)),
         ...lifecycleButtons(app, async () => { await refresh(); await loadDetail(); }, { sm: false, labels: true }),
-        redeployBtn());
+        rollbackBtn(),
+        redeployBtn(),
+        h('a', { class: 'btn', href: `/api/v1/apps/${id}/repo.zip`, download: `${id}.zip`, title: 'Download the whole app as a zip (without node_modules and secret .env files)' }, icon('download', 16), h('span', { class: 'lab' }, 'Download repository')));
     }
   }
 
@@ -221,9 +257,24 @@ export function appPage(ctx) {
         h('td', {}, h('b', {}, l.label), l.weak && h('div', {}, h('span', { class: 'chip warn', style: { marginTop: '4px' } }, 'Default password: change it'))),
         h('td', { class: 'mono' }, l.user), h('td', {}, l.hasSecret ? secretCell({ type: 'login', index: l.index }, '••••••••') : '-'))))))
       : emptyState('No saved logins', 'This app has no seeded accounts. Add them to apps.json if you want them listed here.');
+    function editEnv(v) {
+      const inp = h('input', { class: 'field mono', id: 'env-val', type: v.sensitive ? 'password' : 'text', autocomplete: 'off', spellcheck: false, placeholder: v.sensitive ? 'paste the new value' : '', value: v.sensitive ? '' : v.value });
+      const err = h('p', { class: 'err', role: 'alert' });
+      const save = actionBtn({ ic: 'check', label: 'Save and apply', cls: 'primary', onClick: async () => {
+        err.textContent = '';
+        try { const r = await api(`/apps/${id}/secrets/env`, { method: 'PUT', body: { key: v.key, value: inp.value.trim() } }); m.close(); toast(r.note || 'Saved', r.applied ? 'ok' : 'warn'); refresh(); } catch (e) { err.textContent = e.message; }
+      } });
+      const box = h('div', { class: 'dialog wide', role: 'dialog', 'aria-modal': 'true', 'aria-label': `Edit ${v.key}` },
+        h('h2', {}, `Edit ${v.key}`),
+        h('div', { class: 'fgrid one' }, h('div', { class: 'frow' }, h('label', { class: 'fl', for: 'env-val' }, h('b', {}, v.key)), h('div', { class: 'inline' }, inp))),
+        h('p', { class: 'muted small' }, `Written to ${detail.env.file}. The app's containers are recreated so they pick it up. The change is logged in Activity.`),
+        err, h('div', { class: 'acts' }, h('button', { class: 'btn', onclick: () => m.close() }, 'Cancel'), save));
+      const m = modal(box); inp.focus();
+    }
+    const editBtn = (v) => h('button', { class: 'btn sm icon ghost', 'aria-label': `Edit ${v.key}`, title: 'Edit', onclick: () => editEnv(v) }, icon('edit', 16));
     const envs = !detail.env.file ? emptyState('No env file', 'This app has no env file registered.')
       : !detail.env.readable ? emptyState('Env file not readable', `Could not read ${detail.env.file}. Check that APPS_DIR is mounted.`)
-      : h('div', { class: 'tbl' }, h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'Variable'), h('th', {}, 'Value'))), h('tbody', {}, detail.env.vars.map((v) => h('tr', {}, h('td', { class: 'mono' }, v.key), h('td', {}, v.sensitive ? secretCell({ type: 'env', key: v.key }, v.value || '(empty)') : h('span', { class: 'mono' }, v.value || '(empty)')))))));
+      : h('div', { class: 'tbl' }, h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'Variable'), h('th', {}, 'Value'), h('th', {}, ''))), h('tbody', {}, detail.env.vars.map((v) => h('tr', {}, h('td', { class: 'mono' }, v.key), h('td', {}, v.sensitive ? secretCell({ type: 'env', key: v.key }, v.value || '(empty)') : h('span', { class: 'mono' }, v.value || '(empty)')), h('td', {}, editBtn(v)))))));
     return { el: h('div', { class: 'stack' },
       h('div', { class: 'banner demo' }, icon('shield'), h('span', {}, 'Every reveal is written to the Activity log. Values hide again after 12 seconds.')),
       credentialsPanel(app, ctx.fleet.apps.map((a) => ({ id: a.id, name: a.name })), detail.vault),
@@ -234,13 +285,13 @@ export function appPage(ctx) {
   function deploy() {
     const g = detail.git, term = terminal({ max: 1500 });
     const job = h('div', { class: 'job' }, term.el);
-    const run = () => runJob(`/apps/${id}/redeploy`, term, 'Redeploy', () => { refresh(); });
+    const run = () => runJob(`/apps/${id}/redeploy`, term, 'Redeploy', () => { refresh(); }, { id, name: app.name });
     const main = app.containers.at(-1);
     const cmds = [
       [`Follow logs`, `cd ${detail.composeDir} && docker compose logs -f --tail 100`],
       [`Shell inside ${main}`, `docker exec -it ${main} sh`],
       [`Live resource use`, `docker stats ${app.containers.join(' ')}`],
-      [`Rebuild by hand`, `cd ${detail.composeDir} && git pull && docker compose up -d --build`],
+      [`Rebuild by hand`, `cd ${detail.composeDir} && git pull && docker compose build --no-cache && docker compose up -d`],
     ];
     const u = detail.update;
     const sw = h('input', { type: 'checkbox', id: 'ap-app', checked: detail.autoPull, disabled: !u?.checkout && !g, onchange: async (e) => {
@@ -261,12 +312,13 @@ export function appPage(ctx) {
     return { el: h('div', { class: 'cols' },
       h('div', { class: 'stack' },
         github,
+        ctx.me?.admin !== false && panel('MongoDB', h('div', { class: 'pad-form' }, mongoPanel({ id, name: app.name }, { reload: () => refresh() }))),
         panel('Source', g ? h('dl', { class: 'kv' },
           h('dt', {}, 'Branch'), h('dd', {}, h('span', { class: 'chip' }, icon('branch', 13), g.branch), g.dirty && h('span', { class: 'chip warn', style: { marginLeft: '8px' } }, 'uncommitted changes on server')),
           h('dt', {}, 'Latest commit'), h('dd', {}, h('span', { class: 'mono' }, g.commit), ' ', g.subject),
           h('dt', {}, 'Committed'), h('dd', {}, fmt.ago(Date.parse(g.when))),
           h('dt', {}, 'Folder'), h('dd', { class: 'mono' }, detail.composeDir)) : emptyState('Not a git checkout', 'Redeploy will rebuild from the files already on the server.')),
-        panel('Redeploy', h('div', {}, h('p', { class: 'muted small', style: { padding: '0 14px 12px' } }, 'Runs git pull (fast-forward only) and docker compose up -d --build. If the pull fails, nothing is rebuilt.'), job,
+        panel('Redeploy', h('div', {}, h('p', { class: 'muted small', style: { padding: '0 14px 12px' } }, 'Pulls the latest commit (fast-forward only, local Docker and env files kept) and rebuilds the image from that checkout. A cached image is not reused. If the pull fails, nothing is rebuilt.'), job,
           h('div', { style: { padding: '8px 14px 14px' } }, actionBtn({ ic: 'rocket', label: 'Redeploy now', cls: 'primary', onClick: async () => { if (await confirmDialog({ title: `Redeploy ${app.name}?`, body: 'The app restarts and may be unavailable for a minute.', confirm: 'Redeploy' })) await run(); } }))))),
       panel('Handy commands', h('div', { style: { paddingBottom: '10px' } }, cmds.map(([t, c]) => h('div', {}, h('div', { class: 'muted small', style: { padding: '8px 14px 0' } }, t), h('div', { class: 'cmd' }, h('code', {}, c), h('button', { class: 'btn sm icon ghost', 'aria-label': `Copy: ${t}`, onclick: () => copy(c, 'Command copied') }, icon('copy', 15))))))) ) };
   }
@@ -311,6 +363,9 @@ export function appPage(ctx) {
           h('dt', {}, 'DNS'), h('dd', {}, d.dnsIps.length ? d.dnsIps.join(', ') : 'no record', ' ', h('span', { class: `chip ${d.dnsIps.includes(d.serverIp) ? 'ok' : 'warn'}` }, d.dnsIps.includes(d.serverIp) ? 'points here' : `should be ${d.serverIp}`)),
           h('dt', {}, 'Caddy sends it to'), h('dd', { class: 'mono' }, d.caddy.upstream || (d.caddy.reachable ? 'no route' : 'unknown')),
           h('dt', {}, 'App answers at'), h('dd', { class: 'mono' }, d.answers ? `${d.answers.container}:${d.answers.port}` : 'nothing found')),
+        d.routes?.length ? h('div', { class: 'stack', style: { gap: '6px' } }, d.routes.map((r) => h('div', { class: 'row', style: { gap: '8px', flexWrap: 'wrap' } },
+          h('span', { class: `chip ${r.problems.length ? 'warn' : 'ok'}` }, r.problems.length ? 'fix' : 'ok'),
+          h('span', { class: 'mono' }, r.host), h('span', { class: 'muted small' }, `${r.label || r.container} → ${r.caddy.upstream || 'no Caddy route'}`)))) : null,
         d.problems.length ? h('div', { class: 'banner warn', style: { display: 'block' } }, h('b', {}, 'Why you may see a 502'), h('ul', { style: { margin: '6px 0 0 18px' } }, d.problems.map((p) => h('li', {}, p)))) : h('div', { class: 'banner ok' }, h('span', {}, 'The route looks healthy.')));
     }
     check();
@@ -444,7 +499,7 @@ export function appPage(ctx) {
     if (['secrets', 'deploy', 'data'].includes(ctx.tab) || !detail) await loadDetail();
     if (!detail) { body.append(emptyState('Could not load this app', 'Check the server logs and try again.')); return; }
     const dbTab = () => dbExplorer(ctx, app);
-    current = { overview, logs, database: dbTab, data, source: () => ({ el: studioBody({ app, go }) }), secrets, domain, deploy, visual: () => visualEditor({ id, isAdmin: ctx.me?.admin !== false, canApply: true }), look, upgrades, releases, activity }[ctx.tab]?.() || overview();
+    current = { overview, logs, database: dbTab, data, source: () => ({ el: studioBody({ app, go }) }), secrets, domain, deploy, visual: () => visualEditor({ id, isAdmin: ctx.me?.admin !== false, canApply: true }), look: () => kitStudio({ id, app, ctx }), upgrades, releases, activity }[ctx.tab]?.() || overview();
     clear(body).append(current.el);
   }
   mount();

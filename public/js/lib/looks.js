@@ -15,6 +15,18 @@ const F = {
   space: "'Space Grotesk','Sora',system-ui,sans-serif",
 };
 
+/* The named families above only render if the page loads them, so every stylesheet starts with the matching Google Fonts import. */
+const GF = { 'Inter': 'Inter:wght@400;500;600;700;800', 'Geist': 'Geist:wght@400;500;600;700', 'Sora': 'Sora:wght@400;600;700;800', 'Poppins': 'Poppins:wght@400;500;600;700', 'DM Sans': 'DM+Sans:wght@400;500;600;700',
+  'Playfair Display': 'Playfair+Display:wght@500;600;700;800', 'JetBrains Mono': 'JetBrains+Mono:wght@400;500;700', 'Space Grotesk': 'Space+Grotesk:wght@400;500;600;700',
+  'Archivo': 'Archivo:wght@400;600;700;800;900', 'Fraunces': 'Fraunces:wght@400;600;700;800', 'Manrope': 'Manrope:wght@400;500;600;700;800', 'Outfit': 'Outfit:wght@400;500;600;700', 'Lora': 'Lora:wght@400;500;600;700',
+  'Cormorant Garamond': 'Cormorant+Garamond:wght@500;600;700', 'IBM Plex Mono': 'IBM+Plex+Mono:wght@400;500;600', 'IBM Plex Sans': 'IBM+Plex+Sans:wght@400;500;600;700', 'Bricolage Grotesque': 'Bricolage+Grotesque:wght@400;600;700;800',
+  'Syne': 'Syne:wght@500;600;700;800', 'Plus Jakarta Sans': 'Plus+Jakarta+Sans:wght@400;500;600;700;800', 'Lexend': 'Lexend:wght@400;500;600;700', 'Rubik': 'Rubik:wght@400;500;600;700', 'Work Sans': 'Work+Sans:wght@400;500;600;700',
+  'Nunito': 'Nunito:wght@400;600;700;800', 'Instrument Serif': 'Instrument+Serif', 'Unbounded': 'Unbounded:wght@500;600;700', 'Chakra Petch': 'Chakra+Petch:wght@400;500;600;700', 'Space Mono': 'Space+Mono:wght@400;700', 'Bebas Neue': 'Bebas+Neue', 'Anton': 'Anton', 'Oswald': 'Oswald:wght@400;500;600;700', 'Barlow Condensed': 'Barlow+Condensed:wght@500;600;700', 'Barlow': 'Barlow:wght@400;500;600;700', 'Karla': 'Karla:wght@400;500;600;700', 'Spectral': 'Spectral:wght@400;600;700;800', 'Libre Baskerville': 'Libre+Baskerville:wght@400;700', 'DM Serif Display': 'DM+Serif+Display', 'Abril Fatface': 'Abril+Fatface', 'Orbitron': 'Orbitron:wght@500;700;800', 'Righteous': 'Righteous', 'Quicksand': 'Quicksand:wght@400;500;600;700', 'Bungee': 'Bungee' };
+export const fontImport = (...stacks) => {
+  const used = [...new Set(stacks.flatMap((f) => String(f || '').split(',').map((x) => x.trim().replace(/^['"]|['"]$/g, ''))).filter((n) => GF[n]))];
+  return used.length ? `@import url('https://fonts.googleapis.com/css2?${used.map((n) => `family=${GF[n]}`).join('&')}&display=swap');` : '';
+};
+
 /** Just the design tokens for a Look (used to preview Blocks inside the active Look). */
 export function lookTokens(c) {
   const on = c.on || '#ffffff';
@@ -32,13 +44,16 @@ export function buildLookCss(c) {
   const btnR = c.pill ? '999px' : `${c.btnRadius ?? r}px`;
   const up = c.upper ? 'text-transform:uppercase;letter-spacing:.06em;' : '';
   return [
+    fontImport(body, head),
     `:root{${lookTokens(c)}}`,
-    `body{background:${c.bg}!important;color:${c.text}!important;font-family:${body}!important;${c.ls ? `letter-spacing:${c.ls};` : ''}-webkit-font-smoothing:antialiased}`,
+    `body{background:${c.bg}!important;${/gradient/.test(c.bg) ? 'background-attachment:fixed!important;background-repeat:no-repeat!important;' : ''}color:${c.text}!important;font-family:${body}!important;${c.ls ? `letter-spacing:${c.ls};` : ''}-webkit-font-smoothing:antialiased}`,
     `h1,h2,h3,h4,h5,h6{font-family:${head}!important;color:${c.headColor || c.text}!important;font-weight:${c.hw ?? 700}!important;letter-spacing:${c.hls ?? '-.02em'}!important;${c.upper ? 'text-transform:uppercase;' : ''}}`,
-    `p,li,td,label,span,small{color:${c.text}!important}`,
+    `p,li,td,th,label,small,dd,dt,blockquote{color:${c.text}!important}`,
+    `:where(span):not(:where(button *,a *,[class*=btn] *,[data-dx=btn] *,[class*=badge],[class*=chip],[class*=tag],[data-dx=badge],[data-dx=hero] *)){color:${c.text}!important}`,
     `.muted,[class*=muted],small{color:${c.muted}!important}`,
     `a{color:${c.accent}!important;text-underline-offset:3px!important}`,
     `button,[class*=btn],[class*=button],input[type=submit],.cta,[role=button]{background:${c.btnBg || c.accent}!important;color:${c.btnText || on}!important;border:${c.btnBorder || '0'}!important;border-radius:${btnR}!important;font-family:${body}!important;font-weight:600!important;${up}box-shadow:${c.btnShadow || 'none'}!important;transition:transform .2s ease,box-shadow .2s ease,filter .2s ease!important}`,
+    `button *,[class*=btn] *,[role=button] *,input[type=submit] *{color:inherit!important}`,
     `button:hover,[class*=btn]:hover,.cta:hover,[role=button]:hover{filter:brightness(1.07)!important;${c.hoverLift ? 'transform:translateY(-2px)!important;' : ''}${c.hoverShadow ? `box-shadow:${c.hoverShadow}!important;` : ''}}`,
     `input,textarea,select{background:${c.inputBg || c.surface}!important;color:${c.text}!important;border:${c.inputBorder || `1px solid ${c.border}`}!important;border-radius:${c.inputRadius ?? r}px!important;font-family:${body}!important}`,
     `[class*=card],[class*=panel],[class*=tile],[class*=box],article{background:${c.cardBg || c.surface}!important;color:${c.text}!important;border:${c.cardBorder || `1px solid ${c.border}`}!important;border-radius:${cr}px!important;box-shadow:${c.cardShadow || 'none'}!important;${c.cardBackdrop ? `backdrop-filter:${c.cardBackdrop}!important;` : ''}}`,

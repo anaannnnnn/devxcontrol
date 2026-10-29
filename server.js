@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { docker, run, live } from './lib/docker.js';
-import { loadRegistry, readEnv, maskValue } from './lib/registry.js';
+import { loadRegistry, readEnv, writeEnv, maskValue } from './lib/registry.js';
 import { makeAuth } from './lib/auth.js';
 import { makeUsers, MIN_PASSWORD } from './lib/users.js';
 import { Monitor } from './lib/monitor.js';
@@ -15,15 +15,9 @@ import { problem, notFound, badRequest, conflict } from './lib/problem.js';
 import { makeDbx } from './lib/dbx.js';
 import { makeVault } from './lib/vault.js';
 import { makeSettings } from './lib/settings.js';
-import { makeGit } from './lib/gitx.js';
+import { makeGit, worktreeChanges } from './lib/gitx.js';
 import { makeIntegrations } from './lib/integrations.js';
 import { makeGithub } from './lib/github.js';
-import { makeConfirm } from './lib/jarvis/confirm.js';
-import { makeJarvisTools } from './lib/jarvis/tools.js';
-import { makeBrain } from './lib/jarvis/brain.js';
-import { makeSession as makeJarvisSession } from './lib/jarvis/session.js';
-import { makeRateLimit } from './lib/jarvis/ratelimit.js';
-import { buildIndex as buildKnowledge, fleetDocs } from './lib/jarvis/knowledge.js';
 import { makeLlm } from './lib/llm.js';
 import { makeAutopilot } from './lib/autopilot.js';
 import { makeStudio } from './lib/studio.js';
@@ -36,12 +30,21 @@ import { makeReleaseNotes } from './lib/releasenotes.js';
 import { makeUpgrades } from './lib/upgrades.js';
 import * as themeLib from './lib/themes.js';
 import * as labLib from './lib/themelab.js';
+import * as kitLib from './public/js/lib/kits.js';
+import * as dnaLib from './public/js/lib/dna.js';
+import { sample as sampleLook } from './lib/looksample.js';
 import { makeCreator } from './lib/creator.js';
 import * as designLib from './lib/designgen.js';
 import * as previewLib from './lib/preview.js';
 import { makeOrbit } from './lib/orbit.js';
 import { makeRooms } from './lib/rooms.js';
 import { ORBIT_FEATURES } from './lib/settings.js';
+import { makeLedger } from './lib/ledger.js';
+import * as mx from './lib/mongox.js';
+import { listFiles as zipList, writeZip } from './lib/zipdir.js';
+import { makeMongoLink } from './lib/mongolink.js';
+import { makeMongoPr } from './lib/mongopr.js';
+import { makeLocalAgent } from './lib/localagent.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const env = process.env;
@@ -68,7 +71,7 @@ async function notify(text) {
 }
 
 const monitor = new Monitor({ registry, docker, dataDir: DATA_DIR, notify });
-const ops = makeOps({ registry, docker, monitor, backupDir: BACKUP_DIR, githubToken: env.GITHUB_TOKEN, tokenFor: (repo) => (github.configured() ? github.cloneToken(repo) : null), prepare: (a, l) => onboard.prepareRedeploy(a, l), keep: +env.BACKUP_KEEP || 14 });
+const ops = makeOps({ registry, docker, monitor, backupDir: BACKUP_DIR, githubToken: env.GITHUB_TOKEN, tokenFor: (repo) => (github.configured() ? github.cloneToken(repo) : null), prepare: async (a, l) => { await onboard.prepareRedeploy(a, l); await mongoLink.ensureConfig(a, l); }, afterDeploy: (a, l) => mongoLink.afterDeploy(a, l), keep: +env.BACKUP_KEEP || 14 });
 const settings = makeSettings(DATA_DIR);
 const vault = makeVault({ dataDir: DATA_DIR, key: env.VAULT_KEY || secret });
 if (!env.VAULT_KEY && !DEMO) console.warn('VAULT_KEY not set - using SESSION_SECRET to encrypt saved credentials. Keep it stable.');
@@ -89,7 +92,10 @@ const gitx = makeGit({
 });
 const integrations = makeIntegrations({ dataDir: DATA_DIR, key: env.VAULT_KEY || secret });
 const github = makeGithub({ integrations });
+const mongoLink = makeMongoLink({ settings, integrations, gitx, ops, audit: (id, msg, level = 'info') => monitor.event('deploy', id, msg, level) });
+const mongoPr = makeMongoPr({ settings, github, gitx, audit: (id, msg, level = 'info') => monitor.event('deploy', id, msg, level) });
 const llm = makeLlm({ integrations });
+const localAgent = makeLocalAgent({ llm, ops, monitor });
 const releases = makeReleaseNotes({ registry, llm, dataDir: DATA_DIR, audit: (id, msg, level = 'info') => monitor.event('release', id, msg, level) });
 const autopilot = makeAutopilot({ registry, github, llm, ops, monitor, dataDir: DATA_DIR, appsDir: APPS_DIR, audit: (id, msg, level = 'info') => monitor.event('autopilot', id, msg, level), createJob, runningJob, remoteUrl: (repo) => `${env.GIT_REMOTE_BASE || 'https://github.com'}/${repo}.git` });
 const upgrades = makeUpgrades({ registry, llm, dataDir: DATA_DIR, autopilot, audit: (id, msg, level = 'info') => monitor.event('autopilot', id, msg, level) });
@@ -108,27 +114,7 @@ if (!DEMO && seedPassword && seedPassword.length < MIN_PASSWORD) console.warn(`I
 const auth = makeAuth({ secret });
 const orbit = makeOrbit({ registry, settings, monitor, dbx, autopilot, llm, releases, ops, audit: (type, id, msg, level) => monitor.event(type, id, msg, level), dataDir: DATA_DIR, demo: DEMO });
 const rooms = makeRooms({ dataDir: DATA_DIR });
-
-/* ---- Jarvis (voice operator) wiring ---- */
-const JARVIS_STT = env.JARVIS_STT_URL || 'http://jarvis-stt:8077';
-const JARVIS_TTS = env.JARVIS_TTS_URL || 'http://jarvis-tts:8078';
-const jarvisConfirm = makeConfirm({ audit: (type, id, msg, level) => monitor.event('jarvis', id, msg, level || 'warn') });
-const jarvisRL = makeRateLimit({});
-const jarvisSession = makeJarvisSession({});
-const seenUser = (username, appId) => { const u = users.get(username); if (!u) return false; const allow = allowSet(u); return !allow || (appId != null && allow.has(appId)); };
-const jarvisMonitor = {
-  health: (id) => { try { const a = registry.apps.find((x) => x.id === id); return a ? (monitor.appView(a)?.status ?? null) : null; } catch { return null; } },
-  incidents: (n = 8) => monitor.events.filter((e) => e.level === 'bad' || e.level === 'warn').slice(-n).reverse().map((e) => ({ app: e.app, msg: e.msg, level: e.level, t: e.t })),
-};
-const jarvisTools = makeJarvisTools({ registry, monitor: jarvisMonitor, ops, autopilot, confirm: jarvisConfirm, seen: seenUser });
-let _kIdx = null, _kAt = 0;
-const knowledgeIndex = () => {
-  const t = Date.now(); if (_kIdx && t - _kAt < 60000) return _kIdx;
-  const rd = (f) => { try { return fs.readFileSync(path.join(here, f), 'utf8'); } catch { return ''; } };
-  const docs = fleetDocs({ registry, readme: rd('README.md'), openapi: rd('openapi.yaml'), reviews: (autopilot.reviewsList?.() || []), releaseNotes: (releases.all?.() || []) });
-  _kIdx = buildKnowledge(docs); _kAt = t; return _kIdx;
-};
-const jarvisBrain = makeBrain({ llm, tools: jarvisTools, knowledge: { search: (q, n) => knowledgeIndex().search(q, n) }, session: jarvisSession, rateLimit: jarvisRL, settings: () => ({ name: settings.jarvisName ? settings.jarvisName() : 'Jarvis' }) });
+const ledger = makeLedger({ engineUrl: env.LEDGER_URL || 'http://127.0.0.1:4180', healthUrl: env.NEXUS_HEALTH_URL || 'https://nexus.devxpert.online/api/health' });
 
 /* ---------------------------- app ---------------------------- */
 const app = express();
@@ -195,6 +181,7 @@ app.use((req, res, next) => { if (req.path.startsWith('/api/')) res.set('Cache-C
 app.get('/healthz', (req, res) => res.json({ ok: true, lastTick: monitor.lastTick }));
 
 const api = express.Router();
+const assistantApprovals = new Map();
 app.use('/api/v1', api);
 
 /* ---- session ---- */
@@ -224,28 +211,15 @@ api.post('/session', (req, res) => {
 });
 api.delete('/session', (req, res) => { res.set('Set-Cookie', `dc_s=; Max-Age=0; ${cookieFlags(req)}`); res.status(204).end(); });
 
-// Unauthenticated, rate-limited name capture for the voice login ("say your name"). Transcribes a
-// short clip only; reveals nothing. The password step still fully authenticates.
-api.post('/jarvis/hear', async (req, res) => {
-  const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'anon').split(',')[0].trim();
-  if (!jarvisRL.request('hear:' + ip).ok) return problem(res, 429, 'rate', 'Slow down', 'Too many attempts. Wait a moment.');
-  try {
-    const audio = await readRaw(req, 3 * 1024 * 1024); if (!audio.length) return badRequest(res, 'No audio.');
-    const r = await fetch(`${JARVIS_STT}/transcribe?lang=en`, { method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body: audio, signal: AbortSignal.timeout(30000) });
-    if (!r.ok) return problem(res, 502, 'stt', 'Could not hear', (await r.text()).slice(0, 120));
-    const d = await r.json(); res.json({ text: String(d.text || '').slice(0, 60) });
-  } catch (e) { problem(res, e.status || 502, 'stt', 'Speech service unreachable', String(e.message || e).slice(0, 120)); }
-});
-
 api.use(auth.middleware);
 
 /* ---- who may touch what ----
    admin: everything. member: only the projects they were given; read-only unless "operate"; never the server, connections,
    vault, onboarding, database contents or user management. Enforced here, so the UI hiding things is only a courtesy. */
-const MEMBER_BLOCKED = [/^\/(connections|setup|github|dns|host|onboard|users|credentials|creator)(\/|$)/, /^\/autopilot\/(config|floors)/, /^\/updates\/check$/, /^\/apps\/[^/]+\/(db|credentials|secrets|route)(\/|$)/, /^\/reviews\/[^/]+\/(approve|reject|changes)$/];
-const MEMBER_ACTIONS = [/^\/apps\/[^/]+\/(start|stop|restart|redeploy|backup|git\/check|settings)$/, /^\/containers\/[^/]+\/(start|stop|restart)$/, /^\/autopilot\/(scan|advise|tasks)$/, /^\/autopilot\/findings\/[^/]+\/fix$/];
+const MEMBER_BLOCKED = [/^\/(connections|setup|github|dns|host|onboard|users|credentials|creator|mongo)(\/|$)/, /^\/autopilot\/(config|floors)/, /^\/updates\/check$/, /^\/apps\/[^/]+\/(db|credentials|secrets|route|mongo|repo\.zip)(\/|$)/, /^\/reviews\/[^/]+\/(approve|reject|changes)$/];
+const MEMBER_ACTIONS = [/^\/apps\/[^/]+\/(start|stop|restart|redeploy|rollback|backup|git\/check|settings)$/, /^\/containers\/[^/]+\/(start|stop|restart)$/, /^\/autopilot\/(scan|advise|tasks)$/, /^\/autopilot\/findings\/[^/]+\/fix$/];
 // POSTs that only compute something (no change to any app or setting), so read-only members may use them too
-const READ_POSTS = [/^\/design\/component$/, /^\/apps\/[^/]+\/(view-token|design\/code)$/];
+const READ_POSTS = [/^\/ledger\/run$/, /^\/design\/component$/, /^\/apps\/[^/]+\/(view-token|design\/code)$/];
 const allowSet = (u) => (u.role === 'admin' ? null : new Set(u.apps));
 const seen = (req, appId) => !req.allow || (appId != null && req.allow.has(appId));
 api.use((req, res, next) => {
@@ -276,6 +250,65 @@ api.use((req, res, next) => {
 
 /* ---- account ---- */
 const me = (req) => req.session.u;
+api.post('/assistant/chat', wrap(async (req, res) => {
+  const input = Array.isArray(req.body?.messages) ? req.body.messages.slice(-12) : [];
+  const messages = input.map((m) => ({ role: m?.role === 'assistant' ? 'assistant' : 'user', content: String(m?.content || '').slice(0, 6000) })).filter((m) => m.content.trim());
+  if (!messages.length || messages.at(-1).role !== 'user') return badRequest(res, 'Send a message to the assistant.');
+  const apps = registry.apps.filter((a) => seen(req, a.id)).map((a) => ({ id: a.id, name: a.name, stack: a.stack, status: monitor.status[a.id] || 'unknown', urls: a.urls.map((u) => u.url).slice(0, 2) }));
+  const visibleIds = new Set(apps.map((a) => a.id));
+  const events = monitor.events.filter((e) => !e.app || visibleIds.has(e.app)).slice(-12).map((e) => ({ type: e.type, app: e.app, msg: String(e.msg).slice(0, 240), level: e.level, at: new Date(e.t).toISOString() }));
+  const page = String(req.body?.page || '/').slice(0, 100);
+  const currentAppId = /^\/app\/([a-z0-9-]+)/i.exec(page)?.[1] || null;
+  const candidate = currentAppId ? registry.byId.get(currentAppId) : null;
+  const targetApp = candidate && seen(req, candidate.id) ? candidate : null;
+  const request = messages.at(-1).content;
+  const asksEdit = /\b(add|create|change|update|fix|edit|implement|build|redesign|remove|improve|design|make|rewrite|refactor)\b/i.test(request);
+  const canApproveEdit = asksEdit && req.user.role === 'admin' && !!targetApp && targetApp.id !== 'devx-control' && (!targetApp.repo || github.configured());
+  const context = { role: 'system', content: `Live DevX Control context snapshot (read-only, may be stale by the time you answer):\nSigned-in user: ${req.user.name} (${req.user.role}). Current screen: ${page}. Selected app: ${targetApp ? JSON.stringify({ id: targetApp.id, name: targetApp.name, stack: targetApp.stack, repo: targetApp.repo, url: targetApp.urls[0]?.url, database: targetApp.db?.type || 'none' }) : 'none'}.\nVisible apps and health: ${JSON.stringify(apps)}\nRecent visible activity: ${JSON.stringify(events)}\nYou are the implementation assistant for the selected application. For read-only questions, answer directly. For a requested app change, never say that you cannot make edits: explain a concrete scope, affected app, backup, validation, deployment and rollback in your reply, then ask for one explicit approval. The UI will show an “Approve & implement” control only when an admin is on an eligible app. No changes happen until that control is pressed. After approval, GitHub-linked apps use Autopilot; local apps without a GitHub repo use an isolated source copy and deploy only after the build and health check pass. Both flows back up source and local databases first, preserve the existing Caddy route, and treat this as the only approval. If checks fail, the candidate is not left live. For an app outside the admin's scope or a request to edit DevX Control itself, state that limitation and do not promise an approval control. Never claim changes before they are complete; never edit DevX Control through this assistant.` };
+  const answer = await llm.chat([context, ...messages], { maxTokens: 1600, temperature: 0.25, timeout: 120000 });
+  let action = null;
+  if (canApproveEdit) {
+    for (const [key, value] of assistantApprovals) if (value.expires < Date.now()) assistantApprovals.delete(key);
+    const token = crypto.randomBytes(24).toString('base64url');
+    assistantApprovals.set(token, { user: req.user.name, app: targetApp.id, request: request.slice(0, 2400), plan: answer.slice(0, 5000), expires: Date.now() + 15 * 60e3 });
+    action = { token, app: { id: targetApp.id, name: targetApp.name } };
+  }
+  res.json({ answer, action, model: 'Databricks primary with local Qwen fallback', at: new Date().toISOString() });
+}));
+api.post('/assistant/execute', wrap(async (req, res) => {
+  if (req.user.role !== 'admin') return problem(res, 403, 'admin-required', 'Admin access required', 'Only an admin can approve app code changes.');
+  const token = String(req.body?.token || '');
+  const approval = assistantApprovals.get(token);
+  if (!approval || approval.user !== req.user.name || approval.expires < Date.now()) { assistantApprovals.delete(token); return problem(res, 410, 'approval-expired', 'Approval expired', 'Ask the assistant to prepare the change again.'); }
+  assistantApprovals.delete(token);
+  const a = registry.byId.get(approval.app);
+  if (!a || a.id === 'devx-control' || !seen(req, a.id)) return problem(res, 403, 'app-not-eligible', 'App cannot be changed here', 'Choose an authorized application.');
+  if (a.repo && !github.configured()) return conflict(res, 'Connect GitHub before approving code changes.');
+  await ops.deployments(a.id);
+  if (['postgres', 'sqlite'].includes(a.db?.type)) {
+    const code = await ops.backup(a, () => {});
+    if (code !== 0) return problem(res, 409, 'backup-failed', 'Change not started', 'A verified database backup could not be created. Nothing was edited.');
+  }
+  let sourceSnapshot;
+  try { sourceSnapshot = await ops.sourceSnapshot(a, () => {}); }
+  catch (e) { return problem(res, 409, 'backup-failed', 'Change not started', `A source backup could not be created. Nothing was edited. ${e.message}`); }
+  const title = (approval.request.split(/[\r\n]/)[0].slice(0, 140) || 'Implement approved app change').padEnd(6, ' ');
+  try {
+    let runId;
+    if (a.repo) runId = autopilot.task(a.id, title, approval.request.slice(0, 700), `Owner-approved one-time plan:\n${approval.plan}\n\nOriginal request:\n${approval.request}`, null, { autoDeploy: true }).id;
+    else runId = createJob('assistant-change', a.id, (log) => localAgent.implement({ app: a, request: approval.request, plan: approval.plan, sourceSnapshot, log })).id;
+    audit('autopilot', a.id, `Owner approved assistant change for ${a.name}; source and local database backups are ready`, 'info');
+    res.status(202).json({ run: runId, app: { id: a.id, name: a.name, url: a.urls[0]?.url || null } });
+  } catch (e) { return problem(res, e.status || 400, 'change-not-started', 'Change not started', e.message); }
+}));
+api.get('/assistant/status/:id', wrap(async (req, res) => {
+  const result = autopilot.runStatus(req.params.id);
+  if (result && seen(req, result.app)) return res.json(result);
+  const job = getJob(req.params.id);
+  if (!job || !seen(req, job.appId)) return notFound(res, 'Assistant run');
+  const app = registry.byId.get(job.appId);
+  res.json({ id: job.id, state: !job.done ? 'running' : job.code === 0 ? 'done' : 'failed', stage: job.lines.at(-1) || 'working', error: job.done && job.code !== 0 ? job.lines.at(-1) : null, app: job.appId, appName: app?.name || job.appId, url: app?.urls?.[0]?.url || null, health: monitor.status[job.appId] || 'unknown' });
+}));
 api.get('/account', (req, res) => res.json({ ...(users.info(me(req)) || { name: me(req), twoFactor: false }), users: req.allow ? [] : users.names(), role: req.user.role, minPassword: MIN_PASSWORD }));
 api.post('/account/password', (req, res) => {
   const err = users.changePassword(me(req), req.body?.current, req.body?.next);
@@ -338,12 +371,13 @@ async function gitInfo(a) {
   let v = null;
   if (DEMO) v = { branch: 'main', commit: 'a1b2c3d', subject: 'Fix gold ingest rounding', when: new Date(Date.now() - 36 * 3600e3).toISOString(), dirty: false };
   else if (fs.existsSync(path.join(a.path, '.git'))) {
+    const safe = ['-c', `safe.directory=${a.path}`];
     const [l, b, s] = await Promise.all([
-      run('git', ['-C', a.path, 'log', '-1', '--format=%h|%s|%cI']),
-      run('git', ['-C', a.path, 'rev-parse', '--abbrev-ref', 'HEAD']),
-      run('git', ['-C', a.path, 'status', '--porcelain']),
+      run('git', [...safe, '-C', a.path, 'log', '-1', '--format=%h|%s|%cI']),
+      run('git', [...safe, '-C', a.path, 'rev-parse', '--abbrev-ref', 'HEAD']),
+      run('git', [...safe, '-C', a.path, 'status', '--porcelain']),
     ]);
-    if (l.ok) { const [commit, subject, when] = l.out.trim().split('|'); v = { branch: b.out.trim(), commit, subject, when, dirty: !!s.out.trim() }; }
+    if (l.ok) { const [commit, subject, when] = l.out.trim().split('|'); v = { branch: b.out.trim(), commit, subject, when, dirty: worktreeChanges(s.out).dirty }; }
   }
   gitCache.set(a.id, { t: Date.now(), v });
   return v;
@@ -362,6 +396,11 @@ api.get('/apps/:id', async (req, res) => {
     env: { file: a.envFile || null, readable: envList !== null, vars: (envList || []).map((e) => ({ key: e.key, sensitive: e.sensitive, value: e.sensitive ? maskValue(e.value) : e.value })) },
   });
 });
+
+api.get('/apps/:id/deployments', wrap(async (req, res) => {
+  const a = getApp(req, res); if (!a) return;
+  res.json({ data: await ops.deployments(a.id) });
+}));
 
 api.post('/apps/:id/secrets/reveal', (req, res) => {
   const a = getApp(req, res); if (!a) return;
@@ -382,6 +421,40 @@ api.post('/apps/:id/secrets/reveal', (req, res) => {
   if (value == null) return notFound(res, 'Secret');
   audit('secret', a.id, `Revealed ${type === 'env' ? key : a.logins[index].label} for ${a.name}`, 'warn');
   res.json({ value });
+});
+
+// Change one env variable, then recreate the app's containers so they read the new value (a plain restart keeps the old one).
+api.put('/apps/:id/secrets/env', async (req, res) => {
+  const a = getApp(req, res); if (!a) return;
+  const { key, value } = req.body || {};
+  if (typeof key !== 'string' || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) return badRequest(res, 'key must be an env variable name.');
+  if (typeof value !== 'string' || value.length > 4096 || /[\r\n\0]/.test(value)) return badRequest(res, 'value must be a single line of at most 4096 characters.');
+  if (DEMO) return res.json({ key, applied: true });
+  if (!a.envPath) return conflict(res, 'This app has no env file registered.');
+  let ok;
+  try { ok = writeEnv(a.envPath, key, value); } catch (e) { return problem(res, 500, 'env-write', 'Could not save', e.message); }
+  if (!ok) return notFound(res, 'Variable');
+  audit('secret', a.id, `Changed ${key} for ${a.name}`, 'warn');
+  const has = (f) => fs.existsSync(path.join(a.path, f));
+  const file = ['docker-compose.yml', 'docker-compose.yaml', 'compose.yml', 'compose.yaml'].find(has);
+  if (!file) return res.json({ key, applied: false, note: 'Saved. Redeploy the app to use it.' });
+  const mongoOv = has('docker-compose.devx-mongo.yml') ? ['-f', 'docker-compose.devx-mongo.yml'] : [];
+  const args = has('docker-compose.devx.yml') ? ['compose', '-f', file, '-f', 'docker-compose.devx.yml', ...mongoOv, '-p', a.id, ...(has('.env') ? ['--env-file', '.env'] : []), 'up', '-d'] : mongoOv.length ? ['compose', '-f', file, ...mongoOv, 'up', '-d'] : ['compose', 'up', '-d'];
+  const r = await run('docker', args, { cwd: a.path, timeout: 180000 });
+  audit('action', a.id, `Applied ${key} to ${a.name}${r.ok ? '' : ' (failed)'}`, r.ok ? 'info' : 'bad');
+  monitor.tick().catch(() => {});
+  res.json({ key, applied: r.ok, note: r.ok ? 'Saved and applied.' : `Saved, but the restart failed: ${(r.err || r.out || '').trim().split('\n').pop()}` });
+});
+
+api.get('/apps/:id/repo.zip', async (req, res) => {
+  const a = getApp(req, res); if (!a) return;
+  if (DEMO || !a.path || !fs.existsSync(a.path)) return notFound(res, 'Repository folder');
+  let files; try { files = zipList(a.path); } catch (e) { return problem(res, 413, 'repo-too-large', 'Repository too large', e.message); }
+  if (!files.length) return conflict(res, 'This app has no files to download.');
+  const stamp = new Date().toISOString().slice(0, 10);
+  res.set({ 'Content-Type': 'application/zip', 'Content-Disposition': `attachment; filename="${String(a.id).replace(/[^\w.-]/g, '_')}-${stamp}.zip"`, 'Cache-Control': 'no-store' });
+  audit('action', a.id, `Downloaded repository zip of ${a.name} (${files.length} files)`, 'info');
+  try { await writeZip(files, res); } catch (e) { res.destroy(e); }
 });
 
 api.get('/apps/:id/history', (req, res) => {
@@ -484,6 +557,86 @@ api.post('/apps/:id/theme/apply', async (req, res) => {
   } catch (e) { return problem(res, e.status || 500, 'theme', 'Could not start the restyle', e.message); }
 });
 
+/* ---- UI kits: one-click full restyle, copy another app's look, sample a running site ---- */
+/** What the AI is told when the whole front end should be rebuilt in a kit, not only restyled. */
+function kitRebuildSpec(kit, css, dnaText = '') {
+  return `Redesign this project's whole front end in the UI kit "${kit.name}" (${kit.family}, ${kit.mode}). ${kit.blurb || ''}
+${dnaText ? `Design brief: ${dnaText}\nBuild the backdrop, image treatments and motion into the app itself (CSS and a small script or the project's animation library), respecting prefers-reduced-motion.\n` : ''}
+Do not change what the app does, its routes, data, API calls, text content or accessibility. Change how it looks and is built.
+1. Put the kit's design tokens where the project keeps them (Tailwind theme/config, CSS variables, shadcn/ui variables, a theme file or global CSS): page ${kit.bgBase || kit.bg}, surface ${kit.surfaceBase || kit.surface}, text ${kit.text}, muted text ${kit.muted}, accent ${kit.accent}, border ${kit.border}, label on accent ${kit.on || '#ffffff'}, corner radius ${kit.radius ?? 12}px, body font ${kit.font}, heading font ${kit.head || kit.font}.
+2. Rebuild every shared component (buttons, cards, inputs, selects, modals, tables, tabs, badges, navigation, footer, empty states) so its own markup and classes follow the kit: shape (${kit.pill ? 'pill buttons' : `${kit.btnRadius ?? kit.radius ?? 12}px corners`}), depth (card shadow: ${kit.cardShadow || 'none'}; button shadow: ${kit.btnShadow || 'none'}), borders (card: ${kit.cardBorder || '1px solid ' + kit.border}; button: ${kit.btnBorder || 'none'}), ${kit.upper ? 'uppercase headings and buttons, ' : ''}heading weight ${kit.hw ?? 700}, letter spacing ${kit.hls ?? '-.02em'}.
+3. Restyle every page and screen, not only the home page: spacing rhythm, heading scale, hero, lists, forms and dashboards. Replace hard-coded colours, radii and fonts in the source with the new tokens.
+4. Load the fonts the kit uses. Keep contrast at WCAG AA or better in both states of every control (hover, focus, disabled).
+5. devx-theme.css and devx-theme.js are added as a safety net for anything the rewrite misses; leave them linked.
+Reference stylesheet for the kit (use its values, do not paste it wholesale):
+${css.slice(0, 6000)}`;
+}
+const kitSummary = (k) => ({ id: k.id, name: k.name, family: k.family, mode: k.mode });
+api.get('/apps/:id/look', async (req, res) => {
+  const a = getApp(req, res); if (!a) return; const mine = themes.lookOf(a.id);
+  const others = Object.entries(themes.looks()).filter(([id]) => id !== a.id).map(([id, v]) => { const o = registry.apps.find((x) => x.id === id); return o ? { id, name: o.name, kit: v.kit, kitName: v.name, at: v.at, ...(v.def ? { def: v.def } : {}) } : null; }).filter(Boolean);
+  const meta = `${a.name || ''} ${a.desc || a.description || ''} ${(a.tags || []).join(' ')} ${a.stack || ''} ${a.repo || ''}`;
+  let business = dnaLib.classifyBusiness(meta);
+  if (business.guess) { try { const { html } = await fetchSiteStyle(a); const txt = `${/<title[^>]*>([^<]*)/i.exec(html)?.[1] || ''} ${/<meta[^>]+name=["']description["'][^>]+content=["']([^"']*)/i.exec(html)?.[1] || ''} ${[...html.matchAll(/<h[12][^>]*>([^<]*)/gi)].slice(0, 6).map((m) => m[1]).join(' ')}`; const b2 = dnaLib.classifyBusiness(`${meta} ${txt}`); if (!b2.guess) business = { ...b2, reason: `${b2.reason} on its site` }; } catch { /* keep the guess */ } }
+  res.json({ business, cats: dnaLib.CATS.map((c) => ({ id: c.id, label: c.label })), current: mine, others, apps: registry.apps.filter((x) => x.id !== a.id).map((x) => ({ id: x.id, name: x.name })), canApply: !!a.repo || !!process.env.DEMO, total: kitLib.KITS.length });
+});
+async function fetchSiteStyle(a) {
+  if (process.env.DEMO) return { html: previewLib.DEMO_PAGE, css: '' };
+  const up = previewLib.upstreamOf(a); if (!up) throw Object.assign(new Error('This app has no address to read the look from.'), { status: 409 });
+  const get = async (u) => { const r = await fetch(u, { signal: AbortSignal.timeout(8000), redirect: 'follow', headers: { 'user-agent': 'DevX-Control-LookSampler' } }); if (!r.ok) throw new Error(`${u} answered ${r.status}`); return (await r.text()).slice(0, 400000); };
+  const html = await get(`${up}/`); let css = '';
+  for (const m of [...html.matchAll(/<link[^>]+rel=["']?stylesheet["']?[^>]*>/gi)].slice(0, 4)) {
+    const href = /href=["']?([^"'\s>]+)/i.exec(m[0])?.[1]; if (!href) continue;
+    try { const u = new URL(href, `${up}/`); if (u.origin !== new URL(up).origin) continue; css += `\n${await get(u.href)}`; } catch { /* skip that file */ }
+  }
+  return { html, css };
+}
+api.get('/apps/:id/look/sample', async (req, res) => {
+  const a = getApp(req, res); if (!a) return;
+  try { const { html, css } = await fetchSiteStyle(a); const r = sampleLook({ html, css, id: `site-${a.id}`, name: `Looks like ${a.name}` }); res.json({ kit: r.kit, found: r.found }); }
+  catch (e) { return problem(res, e.status || 502, 'look-sample', 'Could not read that app\'s look', e.message); }
+});
+api.post('/apps/:id/look/apply', async (req, res) => {
+  const a = getApp(req, res); if (!a) return; const b = req.body || {};
+  try {
+    let kit, how = 'chosen', dna = null, dnaBundle = null;
+    if (b.copyFrom) {
+      const src = themes.lookOf(String(b.copyFrom)); const from = registry.apps.find((x) => x.id === String(b.copyFrom)); if (!from) return notFound(res, 'App');
+      if (src) kit = src.def ? kitLib.checkKit(src.def) : kitLib.kitById(src.kit);
+      else { const { html, css } = await fetchSiteStyle(from); kit = sampleLook({ html, css, id: `site-${from.id}`, name: `Looks like ${from.name}` }).kit; }
+      how = `copied from ${from.name}`;
+    } else if (b.dna) {
+      const d = dnaLib.parseDna(String(b.dna)); if (!d) return badRequest(res, 'That design is not valid.'); dna = d; const c = dnaLib.compose(d); kit = { ...c.kit, id: dnaLib.dnaId(d), name: dnaLib.presetById(dnaLib.dnaId(d))?.name || `${c.parts.palette.name} ${c.parts.structure.name}`, blurb: dnaLib.dnaDescribe(d) }; dnaBundle = c;
+    } else if (b.def) kit = kitLib.checkKit(b.def);
+    else kit = kitLib.kitById(String(b.kit || ''));
+    if (!kit) return notFound(res, 'Kit');
+    if (b.accent && !dna) kit = kitLib.withAccent(kit, String(b.accent));
+    const css = dna ? dnaBundle.css : kitLib.buildKitCss(kit); if (css.length > 120000) return badRequest(res, 'That look is too large.');
+    const explain = `Applied the ${kit.name} UI kit (${how}) to the whole project with devx-theme.css and devx-theme.js, linked last in every page.`;
+    const assets = [{ name: 'devx-theme.css', content: `/* ${kit.name}: ${kit.blurb || kit.family} - generated by DevX Control */\n${css}` }];
+    assets.push({ name: 'devx-theme.js', content: `/* ${kit.name} role detector and motion - generated by DevX Control */\n${dna ? dnaBundle.roles + '\n' + dnaBundle.js : kitLib.kitRolesJs(kit)}` });
+    const rebuild = b.depth === 'rebuild';
+    const spec = rebuild ? kitRebuildSpec(kit, css, dna ? dnaLib.dnaDescribe(dna) : '') : '';
+    const run = process.env.DEMO ? { id: 'demo-run' } : await autopilot.task(a.id, rebuild ? `Redesign the whole project in the "${kit.name}" UI kit` : `Apply the "${kit.name}" look to the whole project`, rebuild ? 'Rewrites the components so they are built like the kit, and adds the kit stylesheet and script as a safety net.' : 'Adds a stylesheet and a small script linked last in every page. No layout, text or behaviour changes.', spec, { assets, explain, report: { title: `Apply the "${kit.name}" look`, summary: explain, cause: 'You chose a new look for the project.', frontend: ['Colours, fonts, buttons, forms, tables, cards and navigation follow the new kit on every page.'], backend: ['No change.'], risk: 'low' } });
+    themes.assign(a.id, null); themes.assignLook(a.id, dna ? { kit: kit.id, name: kit.name } : { kit: kitLib.kitById(kit.id) ? kit.id : 'custom', name: kit.name, ...(kitLib.kitById(kit.id) && !b.accent ? {} : { def: kit }) });
+    audit('theme', a.id, `UI kit "${kit.name}" (${how}) sent to Autopilot for ${a.name}`, 'info'); res.status(202).json({ ok: true, run: run?.id || null, kit: kitSummary(kit) });
+  } catch (e) { return problem(res, e.status || 500, 'look', 'Could not start the restyle', e.message); }
+});
+/* Previews of full designs run scripts (role detection, motion), which the app's own page policy forbids inline, so they are served as their own documents and shown in sandboxed frames. */
+api.get('/dna/:mode', (req, res) => {
+  const d = dnaLib.parseDna(String(req.query.d || '')); if (!d) return notFound(res, 'Design');
+  const html = req.params.mode === 'thumb' ? dnaLib.dnaThumb(d, { animate: req.query.animate === '1' }) : req.params.mode === 'page' ? dnaLib.dnaPreviewDoc(d, String(req.query.n || dnaLib.presetById(dnaLib.dnaId(d))?.name || 'Your look').slice(0, 60)) : null;
+  if (!html) return notFound(res, 'Preview');
+  res.set({ 'Content-Security-Policy': "default-src * data: blob: 'unsafe-inline' 'unsafe-eval'; frame-ancestors 'self'", 'X-Frame-Options': 'SAMEORIGIN', 'Cache-Control': 'private, max-age=300' }).type('html').send(html);
+});
+api.get('/kits/:id/:fmt', (req, res) => {
+  const k = kitLib.kitById(req.params.id); if (!k) return notFound(res, 'Kit');
+  if (req.params.fmt === 'css') return res.type('text/css').send(kitLib.buildKitCss(k));
+  if (req.params.fmt === 'json') return res.type('application/json').send(kitLib.kitToJson(k));
+  if (req.params.fmt === 'tailwind') return res.type('text/javascript').send(kitLib.kitToTailwind(k));
+  return notFound(res, 'Format');
+});
+
 /* ---- design code generator + visual editor ---- */
 api.get('/design/components', (req, res) => res.json({ components: Object.entries(designLib.COMPONENTS).map(([id, c]) => ({ id, label: c.label })), formats: designLib.FORMATS, themes: themes.all().map(({ id, name, mode }) => ({ id, name, mode })) }));
 api.post('/design/component', (req, res) => {
@@ -541,7 +694,7 @@ api.post('/apps/:id/db/schema/undo', dbRoute(async (a, req, res) => res.json(awa
 api.post('/apps/:id/db/query', dbRoute(async (a, req, res) => res.json(await dbx.query(a, req.body?.sql, req.body?.write === true, dbFile(req)))));
 
 /* ---- GitHub updates + auto-pull ---- */
-const updateRow = (a) => ({ id: a.id, name: a.name, repo: a.repo || null, group: a.group, autoPull: settings.autoPull(a.id), update: gitx.status(a) });
+const updateRow = (a) => ({ id: a.id, name: a.name, repo: a.repo || null, group: a.group, autoPull: settings.autoPull(a.id), update: gitx.status(a), mongoChoice: settings.mongo(a.id)?.mode || null });
 api.get('/updates', (req, res) => {
   const rows = registry.apps.filter((a) => seen(req, a.id)).map(updateRow);
   rows.sort((x, y) => Date.parse(y.update?.remote?.when || y.update?.local?.when || 0) - Date.parse(x.update?.remote?.when || x.update?.local?.when || 0));
@@ -599,9 +752,16 @@ api.get('/containers/:name/stream', (req, res) => {
 
 /* ---- jobs ---- */
 function startJob(kind, runner) {
-  return (req, res) => {
+  return async (req, res) => {
     const a = getApp(req, res); if (!a) return;
     if (runningJob(kind, a.id)) return conflict(res, `A ${kind} for ${a.name} is already running.`);
+    // The newest code uses MongoDB and nobody has chosen a database for it yet: ask first, deploy second.
+    if (kind === 'redeploy') {
+      const gate = await gitx.mongoGate(a).catch(() => null);
+      if (gate) return problem(res, 409, 'mongo-select', 'Choose a MongoDB first', `${a.name} now uses MongoDB. Pick which database it should use before it is updated.`, { code: 'mongo-select', mongo: { envVar: gate.envVar, bundled: gate.bundled } });
+      const mb = settings.mongo(a.id);
+      if (mb?.mode === 'import-only' && gitx.status(a)?.mongo?.uses) return problem(res, 409, 'mongo-switch', 'Switch to MongoDB first', `The code of ${a.name} now uses MongoDB, but the app is still set up for its old database. Switching copies the latest data, points the app at MongoDB and checks it.`, { code: 'mongo-switch' });
+    }
     const job = createJob(kind, a.id, async (log) => {
       const code = await runner(a, log);
       if (kind === 'redeploy') gitx.check(a).catch(() => {});
@@ -613,7 +773,114 @@ function startJob(kind, runner) {
   };
 }
 api.post('/apps/:id/redeploy', startJob('redeploy', (a, log) => ops.redeploy(a, log)));
+api.post('/apps/:id/rollback', wrap(async (req, res) => {
+  const a = getApp(req, res); if (!a) return;
+  if (!req.user || req.user.role !== 'admin') return problem(res, 403, 'admin-required', 'Not allowed', 'Only an admin can roll back a deployment.');
+  const id = String(req.body?.deploymentId || '').slice(0, 180);
+  if (!id) return badRequest(res, 'Choose one of the five listed deployments.');
+  if (runningJob('rollback', a.id)) return conflict(res, `A rollback for ${a.name} is already running.`);
+  const versions = await ops.deployments(a.id);
+  if (!versions.some((x) => x.id === id)) return notFound(res, 'Deployment');
+  const job = createJob('rollback', a.id, async (log) => {
+    try {
+      await ops.sourceSnapshot(a, log);
+      if (['postgres', 'sqlite'].includes(a.db?.type)) {
+        const code = await ops.backup(a, log);
+        if (code !== 0) throw new Error('A verified database backup was not created; rollback stopped.');
+      } else if (a.db?.type === 'mongo') log('The external MongoDB was left untouched; this operation only rolls back app source.');
+      log('Keeping the current app and Caddy route in place while the saved version is built.');
+      const code = await ops.rollback(a, id, log);
+      if (code !== 0) return code;
+      await monitor.tick();
+      if (monitor.status[a.id] !== 'healthy') {
+        log(`The saved version did not pass the health check (${monitor.status[a.id] || 'unknown'}); rebuilding the current source to restore the previous running version.`);
+        const restored = await ops.redeploy(a, log, { pull: false, track: false });
+        await monitor.tick();
+        if (restored === 0 && monitor.status[a.id] === 'healthy') log('Previous running version restored and healthy.');
+        else log('Automatic restoration did not pass health checks; inspect the app logs before another rollback.');
+        return 1;
+      }
+      audit('deploy', a.id, `Rolled ${a.name} back to ${id}`, 'ok');
+      log(`Rollback completed. ${a.urls[0]?.url || 'App URL'} is healthy; Caddy routing was unchanged.`);
+      return 0;
+    } catch (e) { log(`Rollback stopped safely: ${e.message}`); return 1; }
+  });
+  audit('deploy', a.id, `Rollback started for ${a.name}`, 'warn');
+  res.status(202).json({ job: job.id });
+}));
 api.post('/apps/:id/backup', startJob('backup', (a, log) => ops.backup(a, log)));
+
+/* ---- MongoDB: saved clusters, the Databases page, and moving an app onto a cluster (admins only) ---- */
+const mongoRoute = (fn) => async (req, res) => { try { await fn(req, res); } catch (e) { problem(res, e.status || 400, 'mongo', 'MongoDB', String(e.message || e).slice(0, 300)); } };
+const clusterOf = (req) => { const u = integrations.mongoUri(req.params.cid); if (!u) throw Object.assign(new Error('That cluster is not saved in Connections.'), { status: 404 }); return u; };
+const mongoData = (op, pick = (b) => b) => mongoRoute(async (req, res) => {
+  const uri = clusterOf(req);
+  const b = { ...pick(req.body || {}), db: req.params.db, coll: req.params.coll };
+  res.json(await mx.dataOp(uri, mx.cleanArgs(op, b)));
+});
+api.post('/connections/mongo', mongoRoute(async (req, res) => {
+  const uri = String(req.body?.uri || '').trim(); const name = String(req.body?.name || '').trim();
+  if (!name) return badRequest(res, 'Give this cluster a name, for example Cluster 0.');
+  const info = mx.parseUri(uri);
+  const r = await mx.listDatabases(uri);
+  if (!r.ok) return badRequest(res, r.error || 'Could not connect.');
+  const id = integrations.addMongo({ name, uri, host: info.host, user: info.user });
+  audit('settings', null, `MongoDB cluster ${name} connected`, 'info');
+  res.status(201).json({ id, databases: r.databases, listed: r.listed });
+}));
+api.delete('/connections/mongo/:cid', mongoRoute(async (req, res) => {
+  const using = Object.entries(settings.allMongo()).filter(([, b]) => b.clusterId === req.params.cid).map(([id]) => id);
+  if (using.length) return conflict(res, `Still used by ${using.join(', ')}. Unlink ${using.length > 1 ? 'those apps' : 'that app'} first.`);
+  if (!integrations.removeMongo(req.params.cid)) return notFound(res, 'Cluster');
+  audit('settings', null, `MongoDB cluster ${req.params.cid} removed`, 'warn'); res.status(204).end();
+}));
+api.get('/mongo/:cid/databases', mongoData('databases'));
+api.get('/mongo/:cid/:db/collections', mongoData('collections'));
+api.post('/mongo/:cid/:db/collections', mongoRoute(async (req, res) => {
+  const uri = clusterOf(req);
+  const r = await mx.dataOp(uri, mx.cleanArgs('createCollection', { db: req.params.db, coll: req.body?.name }));
+  audit('data', null, `Created collection ${req.params.db}.${req.body?.name} on ${integrations.mongoName(req.params.cid)}`, 'warn'); res.status(201).json(r);
+}));
+api.post('/mongo/:cid/:db/:coll/find', mongoData('find', (b) => ({ filter: b.filter, sort: b.sort, skip: b.skip, limit: b.limit })));
+api.post('/mongo/:cid/:db/:coll/docs', mongoRoute(async (req, res) => {
+  const uri = clusterOf(req);
+  const r = await mx.dataOp(uri, mx.cleanArgs('insert', { db: req.params.db, coll: req.params.coll, doc: req.body?.doc }));
+  audit('data', null, `Added a document to ${req.params.db}.${req.params.coll} on ${integrations.mongoName(req.params.cid)}`, 'warn'); res.status(201).json(r);
+}));
+api.put('/mongo/:cid/:db/:coll/docs', mongoRoute(async (req, res) => {
+  const uri = clusterOf(req);
+  const r = await mx.dataOp(uri, mx.cleanArgs('replace', { db: req.params.db, coll: req.params.coll, id: req.body?.id, doc: req.body?.doc }));
+  audit('data', null, `Edited a document in ${req.params.db}.${req.params.coll} on ${integrations.mongoName(req.params.cid)}`, 'warn'); res.json(r);
+}));
+api.post('/mongo/:cid/:db/:coll/docs/delete', mongoRoute(async (req, res) => {
+  const uri = clusterOf(req);
+  const r = await mx.dataOp(uri, mx.cleanArgs('delete', { db: req.params.db, coll: req.params.coll, id: req.body?.id }));
+  audit('data', null, `Deleted a document from ${req.params.db}.${req.params.coll} on ${integrations.mongoName(req.params.cid)}`, 'warn'); res.json(r);
+}));
+api.post('/mongo/:cid/:db/:coll/drop', mongoRoute(async (req, res) => {
+  if (req.body?.confirm !== req.params.coll) return badRequest(res, 'Type the collection name to confirm.');
+  const uri = clusterOf(req);
+  const r = await mx.dataOp(uri, mx.cleanArgs('dropCollection', { db: req.params.db, coll: req.params.coll }));
+  audit('data', null, `Dropped collection ${req.params.db}.${req.params.coll} on ${integrations.mongoName(req.params.cid)}`, 'bad'); res.json(r);
+}));
+
+api.get('/apps/:id/mongo', mongoRoute(async (req, res) => { const a = getApp(req, res); if (!a) return; res.json(await mongoLink.overview(a)); }));
+api.post('/apps/:id/mongo/link', mongoRoute(async (req, res) => {
+  const a = getApp(req, res); if (!a) return;
+  const { cluster, database, copy, replace, local } = req.body || {};
+  res.json({ binding: await mongoLink.link(a, { cluster, database, copy: copy !== false, replace: replace === true, local: local === true }) });
+}));
+api.delete('/apps/:id/mongo', mongoRoute(async (req, res) => { const a = getApp(req, res); if (!a) return; await mongoLink.unlink(a); audit('settings', a.id, `MongoDB choice cleared for ${a.name}`, 'warn'); res.status(204).end(); }));
+api.post('/apps/:id/mongo/verify', mongoRoute(async (req, res) => {
+  const a = getApp(req, res); if (!a) return;
+  const b = settings.mongo(a.id); if (!b || b.mode === 'local') return conflict(res, 'Link a MongoDB database first.');
+  const lines = []; const v = await mongoLink.checkAndRecord(a, (l) => lines.push(l)); res.json({ ok: v.ok, checks: v.checks });
+}));
+api.post('/apps/:id/mongo/import', startJob('import', (a, log) => mongoLink.importAgain(a, log)));
+// The pull request that changes the repository itself: GET shows what it would do (nothing is pushed), POST opens it as a draft.
+api.get('/apps/:id/mongo/pr', mongoRoute(async (req, res) => { const a = getApp(req, res); if (!a) return; res.json(await mongoPr.plan(a)); }));
+api.post('/apps/:id/mongo/pr', mongoRoute(async (req, res) => { const a = getApp(req, res); if (!a) return; res.status(201).json(await mongoPr.create(a, { autoMerge: req.body?.autoMerge !== false })); }));
+api.post('/apps/:id/mongo/switch', startJob('switch', (a, log) => mongoLink.switchToMongo(a, log)));
 api.get('/jobs/:id/stream', (req, res) => {
   const job = getJob(req.params.id);
   if (!job) return notFound(res, 'Job');
@@ -676,7 +943,7 @@ api.post('/host/test-alert', async (req, res) => {
 
 
 /* ---- connections: GitHub App + AI model ---- */
-const wrap = (fn) => async (req, res) => { try { await fn(req, res); } catch (e) { const st = e.status && e.status >= 400 && e.status < 600 ? e.status : 502; problem(res, st === 401 ? 502 : st, e.code || 'failed', 'That did not work', e.message); } };
+function wrap(fn) { return async (req, res) => { try { await fn(req, res); } catch (e) { const st = e.status && e.status >= 400 && e.status < 600 ? e.status : 502; problem(res, st === 401 ? 502 : st, e.code || 'failed', 'That did not work', e.message); } }; }
 
 
 /* ---- users (admin only; the middleware above already blocks members) ---- */
@@ -789,7 +1056,7 @@ api.post('/connections/ollama/install', wrap(async (req, res) => {
     if (!monitor.containers.ollama) { log('$ docker run ollama/ollama'); if (await sh(['run', '-d', '--name', 'ollama', '--restart', 'unless-stopped', '--network', 'web', '-v', 'ollama:/root/.ollama', 'ollama/ollama']) !== 0) return 1; await new Promise((r) => setTimeout(r, 4000)); }
     log(`$ ollama pull ${model} (this can take several minutes)`);
     if (await sh(['exec', 'ollama', 'ollama', 'pull', model]) !== 0) return 1;
-    integrations.setLlm({ baseUrl: 'http://ollama:11434/v1', model }); log(`AI model set to ${model} on this server.`);
+    integrations.setLlmFallback({ baseUrl: 'http://ollama:11434/v1', model }); log(`Local Ollama backup model set to ${model}; Databricks remains primary.`);
     audit('settings', null, `Installed Ollama with ${model}`, 'ok'); return 0;
   });
   res.status(202).json({ job: job.id });
@@ -816,59 +1083,6 @@ api.post('/reviews/:id/approve', wrap(async (req, res) => {
 }));
 api.post('/reviews/:id/reject', wrap(async (req, res) => res.json(autopilot.reject(req.params.id, req.body?.note))));
 api.post('/reviews/:id/changes', wrap(async (req, res) => { const r = autopilot.requestChanges(req.params.id, req.body?.note); res.status(202).json({ run: r.id }); }));
-
-/* ---- Jarvis (voice operator) ---- */
-const jarvisSid = (req) => req.session.csrf || me(req);
-
-api.get('/jarvis/state', (req, res) => res.json({ ...jarvisRL.state(), name: 'Jarvis' }));
-
-api.post('/jarvis/ask', async (req, res) => {
-  const text = String(req.body?.text || '').trim().slice(0, 1000);
-  if (!text) return badRequest(res, 'Say something first.');
-  try {
-    res.json(await jarvisBrain.respond({ text, user: me(req), sessionId: jarvisSid(req) }));
-  } catch (e) {
-    if (e.code === 'no-llm') return res.json({ say: 'I can read your fleet status, but no AI model is connected yet. Add one in Connections.', pending: null, sources: [] });
-    problem(res, e.status || 500, 'jarvis', 'Jarvis had a problem', String(e.message || e).slice(0, 200));
-  }
-});
-
-api.post('/jarvis/confirm/:id', async (req, res) => {
-  const peek = jarvisConfirm.get(req.params.id);
-  if (!peek) return conflict(res, 'That confirmation has expired. Ask me again.');
-  if (peek.tier >= 2) { // consequential: re-authenticate
-    const v = users.verify(me(req), req.body?.password, req.body?.code);
-    if (!v.ok) return problem(res, 403, 'reauth', v.needCode ? 'Code needed' : 'Re-authentication failed', v.needCode ? 'Enter your 2FA code to confirm this.' : 'That password was not right.');
-  }
-  const out = await jarvisTools.execute(req.params.id, { user: me(req), session: jarvisSid(req) });
-  if (!out.ok) return problem(res, out.status || 409, 'jarvis', 'Could not run that', out.error);
-  res.json(out);
-});
-
-api.post('/jarvis/kill', (req, res) => { if (req.user.role !== 'admin') return problem(res, 403, 'forbidden', 'Not allowed', 'Only an admin.'); jarvisRL.setKill(req.body?.on !== false); res.json(jarvisRL.state()); });
-api.post('/jarvis/readonly', (req, res) => { if (req.user.role !== 'admin') return problem(res, 403, 'forbidden', 'Not allowed', 'Only an admin.'); jarvisRL.setReadOnly(req.body?.on !== false); res.json(jarvisRL.state()); });
-
-api.get('/jarvis/voices', async (_req, res) => { try { const r = await fetch(`${JARVIS_TTS}/voices`, { signal: AbortSignal.timeout(5000) }); res.json(await r.json()); } catch { res.json({ voices: [], error: 'The voice service is not reachable.' }); } });
-
-api.post('/jarvis/speak', async (req, res) => {
-  const text = String(req.body?.text || '').slice(0, 2000); if (!text) return badRequest(res, 'No text to speak.');
-  try {
-    const r = await fetch(`${JARVIS_TTS}/speak`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text, voice: req.body?.voice, fx: req.body?.fx, lang: req.body?.lang || 'en', speed: req.body?.speed }), signal: AbortSignal.timeout(60000) });
-    if (!r.ok) return problem(res, 502, 'tts', 'Voice error', (await r.text()).slice(0, 160));
-    res.set('Content-Type', 'audio/wav'); res.set('Cache-Control', 'no-store'); res.end(Buffer.from(await r.arrayBuffer()));
-  } catch (e) { problem(res, 502, 'tts', 'Voice service unreachable', String(e.message || e).slice(0, 160)); }
-});
-
-api.post('/jarvis/stt', async (req, res) => {
-  try {
-    const audio = await readRaw(req, 6 * 1024 * 1024);
-    if (!audio.length) return badRequest(res, 'No audio received.');
-    const qs = new URLSearchParams({ lang: String(req.query?.lang || ''), prompt: registry.apps.map((a) => a.name).join(' ').slice(0, 300) }).toString();
-    const r = await fetch(`${JARVIS_STT}/transcribe?${qs}`, { method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body: audio, signal: AbortSignal.timeout(120000) });
-    if (!r.ok) return problem(res, 502, 'stt', 'Transcription error', (await r.text()).slice(0, 160));
-    res.json(await r.json());
-  } catch (e) { problem(res, e.status || 502, 'stt', 'Speech service unreachable', String(e.message || e).slice(0, 160)); }
-});
 
 /* ---- studio ---- */
 api.get('/studio/:id/tree', wrap(async (req, res) => res.json(await studio.tree(req.params.id))));
@@ -907,6 +1121,12 @@ api.post('/creator/drafts/:id/deploy', wrap(async (req, res) => {
   const job = createJob('onboard', id, async (log) => { try { const code = await onboard.deploy(cfg, log); if (code === 0) await creator.discard(id); return code; } catch (e) { log(`error: ${e.message}`); return 1; } });
   audit('create', id, `Deploying AI-created app ${cfg.name}`, 'info'); res.status(202).json({ job: job.id });
 }));
+
+/* ---- Ledger (local report engine, read-only; members may run reports) ---- */
+const ledgerErr = (res, e) => problem(res, e.status || 502, 'ledger', 'Ledger request failed', e.message || 'The request failed.');
+api.get('/ledger/status', async (req, res) => { const [engine, nexus] = await Promise.all([ledger.engine(), ledger.nexus()]); res.json({ engine, nexus, checkedAt: Date.now() }); });
+api.get('/ledger/meta', async (req, res) => { try { res.json(await ledger.meta()); } catch (e) { ledgerErr(res, e); } });
+api.post('/ledger/run', async (req, res) => { try { res.json(await ledger.run(req.body)); } catch (e) { ledgerErr(res, e); } });
 
 /* ---- Orbit (feature switches default off) ---- */
 const orbitErr = (res, e) => problem(res, e.status || 500, 'orbit', 'Orbit request failed', e.message || 'The request failed.');
@@ -1099,18 +1319,11 @@ app.get('/themes/:file', (req, res) => {
   res.type('text/javascript').send(themeLib.toTailwind(t));
 });
 
-/* ---- Jarvis page: served with microphone allowed on this origin (global policy disables it) ---- */
-const jarvisPage = (req, res) => {
-  res.set('Permissions-Policy', 'microphone=(self), camera=(), geolocation=()');
-  res.set('Cache-Control', 'no-cache');
-  res.sendFile(path.join(here, 'public/jarvis/index.html'));
-};
-app.get('/jarvis', jarvisPage);
-app.get('/jarvis/', jarvisPage);
-app.get('/jarvis/index.html', jarvisPage);
+/* Jarvis is disabled. Keep historical assets on disk, but make the old page and assets unreachable. */
+app.use((req, res, next) => /^\/jarvis(?:\/|$)/i.test(req.path) ? notFound(res, 'Page') : next());
 
 /* ---- static UI ---- */
-app.use(express.static(path.join(here, 'public'), { maxAge: '1h', setHeaders: (res, p) => { if (p.endsWith('index.html') || p.includes('/jarvis/')) res.set('Cache-Control', 'no-cache'); } }));
+app.use(express.static(path.join(here, 'public'), { maxAge: '1h', setHeaders: (res, p) => { if (p.endsWith('index.html')) res.set('Cache-Control', 'no-cache'); } }));
 app.get('/openapi.yaml', (req, res) => res.sendFile(path.join(here, 'openapi.yaml')));
 app.use((err, req, res, next) => {
   if (err.type === 'entity.parse.failed') return badRequest(res, 'Body must be valid JSON.');

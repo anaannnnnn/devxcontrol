@@ -5,3 +5,5 @@ data/
 *.log
 backups/
 sidecars/*/models/
+*.bak-*
+*.bak

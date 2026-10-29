@@ -1,8 +1,17 @@
 // Design code generator: pick a component and a theme, see it live, copy the code as HTML+CSS, Tailwind or React.
 import { h, clear, icon, toast, copy } from '../ui.js';
 import { api } from '../api.js';
+import { kitBrowser } from './kits.js';
 
 export function designPage(ctx) {
+  const outer = h('div', { class: 'stack' }); const kitsBox = h('div', { hidden: true }); let kitsLoaded = false; let compsEl = null;
+  const tabs = h('div', { class: 'seg', role: 'group', 'aria-label': 'Design section' }, ...[['kits', 'UI kits'], ['components', 'Components']].map(([k, l]) => h('button', { 'aria-pressed': String(k === 'kits'), onclick: async (e) => { tabs.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b === e.currentTarget))); kitsBox.hidden = k !== 'kits'; compsEl.hidden = k !== 'components'; if (k === 'kits' && !kitsLoaded) { kitsLoaded = true; kitsBox.append(await kitBrowser(ctx)); } } }, l)));
+  const comp = componentsPage(ctx); compsEl = comp.el; compsEl.hidden = true; outer.append(tabs, kitsBox, compsEl);
+  kitsBox.hidden = false; kitsLoaded = true; kitBrowser(ctx).then((el) => kitsBox.append(el));
+  return { el: outer };
+}
+
+function componentsPage(ctx) {
   ctx.crumbs([{ label: 'Design' }]);
   const S = { component: 'hero', format: 'html', theme: 'deep-space', text: '' }; let meta = null;
   const root = h('div', { class: 'stack' }); const prev = h('iframe', { class: 'dg-prev', title: 'Preview', sandbox: '' }); const code = h('pre', { class: 'code dg-code' });

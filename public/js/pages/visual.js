@@ -6,7 +6,7 @@
 import { h, clear, icon, toast, modal, actionBtn, copy } from '../ui.js';
 import { api } from '../api.js';
 import { KINDS, kindFor, variantCount, paramsFromSeed, render, extractContent, contentPool, mapContent, previewDoc, SURFACES, surfaceCss, PALETTES, styleVariants } from '../lib/components.js';
-import { LOOKS, FAMILIES, buildLookCss, lookThumb, lookTokens } from '../lib/looks.js';
+import { KITS as LOOKS, KIT_FAMILIES as FAMILIES, buildKitCss as buildLookCss, kitThumb as lookThumb, kitTokens as lookTokens } from '../lib/kits.js';
 import { BLOCKS, BLOCK_GROUPS, blockPreviewDoc, SAMPLE } from '../lib/blocks.js';
 
 const hex = (c) => { const m = /rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?/.exec(c || ''); if (!m || (m[4] !== undefined && +m[4] === 0)) return '#ffffff'; return `#${[1, 2, 3].map((i) => (+m[i]).toString(16).padStart(2, '0')).join('')}`; };

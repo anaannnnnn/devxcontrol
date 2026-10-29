@@ -25,6 +25,10 @@ import { maybeSetup } from './pages/setup.js';
 import { usersPage } from './pages/users.js';
 import { orbitPage } from './pages/orbit.js';
 import { automationPage } from './pages/automation.js';
+import { ledgerPage } from './pages/ledger.js';
+import { databasesPage } from './pages/mongo.js';
+import { makeSidebar } from './sidebar.js';
+import { mountAssistant } from './assistant.js';
 
 const root = document.getElementById('app');
 const state = { fleet: null, page: null, session: null, timer: null, ticker: null, failures: 0 };
@@ -37,6 +41,7 @@ const NAV = [
   { path: '/create', label: 'Create', icon: 'sparkle', g: 'main', match: (p) => p === '/create' },
   { path: '/design', label: 'Design', icon: 'palette', g: 'main', match: (p) => p === '/design' },
   { path: '/orbit', label: 'Orbit', icon: 'radar', g: 'main', match: (p) => p === '/orbit' || p.startsWith('/orbit/') },
+  { path: '/databases', label: 'Databases', icon: 'db', g: 'system', note: 'Browse and edit MongoDB', match: (p) => p === '/databases' },
   { path: '/users', label: 'Users', icon: 'user', g: 'system', note: 'Who can see which project', match: (p) => p === '/users' },
   { path: '/connections', label: 'Connections', icon: 'key', g: 'system', note: 'GitHub and AI model', match: (p) => p === '/connections' },
   { path: '/updates', label: 'Updates', icon: 'bolt', pip: 'updates', g: 'system', note: 'Pull new commits', match: (p) => p === '/updates' },
@@ -45,9 +50,10 @@ const NAV = [
   { path: '/activity', label: 'Activity', icon: 'activity', g: 'system', note: 'Audit log', match: (p) => p === '/activity' },
   { path: '/host', label: 'Server', icon: 'server', g: 'system', note: 'Caddy and TLS', match: (p) => p === '/host' },
   { path: '/account', label: 'Account', icon: 'user', g: 'system', note: 'Password and 2FA', match: (p) => p === '/account' },
+  { path: '/ledger', label: 'Ledger', icon: 'activity', g: 'system', note: 'Reports and Nexus status', match: (p) => p === '/ledger' },
   { path: '/automation', label: 'Automation', icon: 'gauge', g: 'system', note: 'Orbit switches, all off', match: (p) => p === '/automation' },
 ];
-const ADMIN_ONLY = new Set(['/connections', '/vault', '/host', '/users', '/onboard', '/create']);
+const ADMIN_ONLY = new Set(['/connections', '/databases', '/vault', '/host', '/users', '/onboard', '/create']);
 let MAIN = [], SYSTEM = [];
 const me = { admin: true, operate: true };
 function applyRole(s) {
@@ -142,30 +148,33 @@ function buildShell() {
   const dock = h('nav', { class: 'dock', 'aria-label': 'Quick navigation' },
     dockList().map((p) => { if (p === '/onboard') return h('button', { class: 'dk fab', 'aria-label': 'Onboard repo', onclick: () => go('/onboard') }, icon('plus', 24)); return navBtn(NAV.find((n) => n.path === p), 'dk'); }),
     h('button', { class: 'dk', 'aria-label': 'More', dataset: { group: 'system' }, onclick: more }, icon('menu', 20), h('span', { class: 'lb' }, 'More')));
+  const side = makeSidebar({ NAV, route, go, getFleet: () => state.fleet, getMe: () => me, palette, theme, paintTheme: () => paintTheme(), openAppearance, signOut });
   const crumbs = h('div', { class: 'crumbs', 'aria-label': 'Breadcrumb' });
   const main = h('main', { id: 'main', tabindex: -1 });
   const bar = h('header', { class: 'hud-top' }, pill);
-  const el = h('div', { class: 'shell' }, spaceBg(), bar, h('div', { class: 'main-col' }, crumbs, main), dock);
+  const el = h('div', { class: 'shell' }, spaceBg(), bar, side.el, h('div', { class: 'main-col' }, crumbs, main), dock);
   const paintTheme = () => { const dark = document.documentElement.dataset.theme === 'dark'; clear(themeBtn).append(icon(dark ? 'sun' : 'moon', 18), h('span', {}, h('b', {}, dark ? 'Light theme' : 'Dark theme'))); };
   paintTheme();
   addEventListener('scroll', () => bar.classList.toggle('scrolled', scrollY > 8), { passive: true });
-  return { el, rail: el, pill, dock, crumbs, live, main, paintTheme };
+  return { el, rail: el, pill, dock, crumbs, live, main, paintTheme, side };
 }
 
 function paintChrome() {
   if (!shell) return;
   const f = state.fleet;
-  const dot = shell.live;
+  shell.side.paint();
   const age = f ? Date.now() - f.lastTick : Infinity;
-  dot.classList.toggle('stale', state.failures === 0 && age > 45000);
-  dot.classList.toggle('dead', state.failures >= 2);
-  dot.lastChild.textContent = state.failures >= 2 ? 'Connection lost, retrying' : f?.lastTick ? `Updated ${fmt.dur(age)} ago` : 'Starting';
+  for (const dot of [shell.live, shell.side.live]) {
+    dot.classList.toggle('stale', state.failures === 0 && age > 45000);
+    dot.classList.toggle('dead', state.failures >= 2);
+    dot.lastChild.textContent = state.failures >= 2 ? 'Connection lost, retrying' : f?.lastTick ? `Updated ${fmt.dur(age)} ago` : 'Starting';
+  }
   const set = (k, n) => shell.el.querySelectorAll(`.pip[data-pip="${k}"]`).forEach((i) => { i.hidden = !n; i.textContent = n > 1 || k !== 'fleet' ? String(n) : ''; });
   set('fleet', f ? f.summary.down + f.summary.degraded : 0);
   set('updates', f ? f.apps.filter((a) => a.behind > 0).length : 0);
   set('reviews', f?.summary.reviews || 0);
   const p = route();
-  shell.el.querySelectorAll('[data-path]').forEach((b) => { const n = NAV.find((x) => x.path === b.dataset.path); if (n.match(p)) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
+  shell.el.querySelectorAll('[data-path]:not(.sb-btn)').forEach((b) => { const n = NAV.find((x) => x.path === b.dataset.path); if (n.match(p)) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
   const inSys = SYSTEM.some((n) => n.match(p) ) || p === '/onboard' || p === '/studio' && false;
   shell.el.querySelectorAll('[data-group="system"]').forEach((b) => { if (inSys) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
 }
@@ -202,8 +211,10 @@ function renderPage() {
   else if (p === '/vault') page = vaultPage(ctx);
   else if (p === '/account') page = accountPage(ctx);
   else if (p === '/connections') page = connectionsPage(ctx);
+  else if (p === '/databases') page = databasesPage(ctx);
   else if (p === '/users') page = usersPage(ctx);
   else if (p === '/automation') page = automationPage(ctx);
+  else if (p === '/ledger') page = ledgerPage(ctx);
   else if (p === '/orbit' || p.startsWith('/orbit/')) page = orbitPage({ ...ctx, section: p === '/orbit' ? 'sky' : p.slice('/orbit/'.length) });
   else if (p === '/backups') page = backupsPage(ctx);
   else if (p === '/activity') page = activityPage(ctx);
@@ -228,9 +239,11 @@ async function signOut() {
 
 function start() {
   fx.init();
+  state.assistant?.destroy?.(); state.assistant = null;
   clear(root);
   shell = buildShell();
   root.append(shell.el);
+  state.assistant = mountAssistant();
   motion.shell(shell);
   refresh().then(() => { if (state.fleet) { renderPage(); if (me.admin) maybeSetup({ go }); } else shell.main.append(h('div', { class: 'banner' }, 'Could not load the fleet. Check the server logs.')); });
   clearInterval(state.timer); clearInterval(state.ticker);
@@ -240,6 +253,7 @@ function start() {
 
 async function showLogin(info) {
   fx.init();
+  state.assistant?.destroy?.(); state.assistant = null;
   clearInterval(state.timer); clearInterval(state.ticker);
   state.page?.destroy?.(); state.page = null; shell = null; state.fleet = null;
   const s = info || await api('/session');

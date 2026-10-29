@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { safeEqual, b32decode, totp, totpValid } from '../lib/auth.js';
-import { maskValue } from '../lib/registry.js';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { maskValue, readEnv, writeEnv } from '../lib/registry.js';
 
 test('safeEqual compares in constant-time style and rejects mismatches', () => {
   assert.equal(safeEqual('abc', 'abc'), true);
@@ -21,4 +24,14 @@ test('totpValid accepts current code and rejects a wrong one', () => {
 test('maskValue hides secrets', () => {
   const m = maskValue('supersecretvalue');
   assert.ok(!m.includes('supersecret'));
+});
+test('writeEnv changes one existing key and keeps the rest', () => {
+  const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'env-')), '.env');
+  fs.writeFileSync(f, '# note\nYOUTUBE_API_KEY=\nexport PORT=3000\n', { mode: 0o600 });
+  assert.equal(writeEnv(f, 'YOUTUBE_API_KEY', 'AIza-test'), true);
+  assert.equal(writeEnv(f, 'PORT', '4000'), true);
+  assert.equal(writeEnv(f, 'MISSING', 'x'), false);
+  assert.equal(fs.readFileSync(f, 'utf8'), '# note\nYOUTUBE_API_KEY=AIza-test\nexport PORT=4000\n');
+  assert.equal(readEnv(f).find((e) => e.key === 'YOUTUBE_API_KEY').value, 'AIza-test');
+  assert.equal(fs.statSync(f).mode & 0o777, 0o600);
 });

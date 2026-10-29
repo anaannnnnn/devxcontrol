@@ -68,6 +68,36 @@
       "stack": "Node · Postgres"
     },
     {
+      "id": "nexus-v2",
+      "name": "DevX Nexus V2",
+      "tagline": "Supermarket CRM and customer app on local SQL Server",
+      "group": "Platforms",
+      "dir": "nexus-v2",
+      "repo": "anaannnnnn/nexus-v2",
+      "containers": [
+        "nexus-v2"
+      ],
+      "urls": [
+        {
+          "label": "App",
+          "url": "https://nexus-v2.devxpert.online",
+          "path": "/api/health"
+        },
+        {
+          "label": "Admin",
+          "url": "https://nexus-v2.devxpert.online/admin",
+          "probe": false
+        }
+      ],
+      "db": {
+        "type": "mssql",
+        "container": "mssql",
+        "note": "SupermarketDB on the local SQL Server. Not the Nexus Postgres database."
+      },
+      "envFile": "nexus.env",
+      "stack": "Node · SQL Server"
+    },
+    {
       "id": "aquaos",
       "name": "AquaOS",
       "tagline": "Water delivery CRM, driver and customer apps",
@@ -103,61 +133,6 @@
         "volume": "aquaos_aquaos_data"
       },
       "stack": "Node · SQLite"
-    },
-    {
-      "id": "jewelry",
-      "name": "Boutique OS",
-      "tagline": "Jewellery storefront, CRM and live gold pricing",
-      "group": "Platforms",
-      "dir": "jewelry",
-      "repo": "subunu-salam/DevX-Jewelry-Digital-Boutique",
-      "containers": [
-        "jewelry-db",
-        "jewelry-api",
-        "jewelry-boutique",
-        "jewelry-crm"
-      ],
-      "urls": [
-        {
-          "label": "Boutique",
-          "url": "https://jewelry.devxpert.online"
-        },
-        {
-          "label": "CRM",
-          "url": "https://jewelry-crm.devxpert.online"
-        },
-        {
-          "label": "API",
-          "url": "https://jewelry-api.devxpert.online",
-          "path": "/health"
-        }
-      ],
-      "db": {
-        "type": "postgres",
-        "container": "jewelry-db"
-      },
-      "envFile": "jewelry.env",
-      "logins": [
-        {
-          "label": "CRM owner",
-          "user": "owner@aurelia.ae",
-          "pass": "Password123!",
-          "weak": true
-        },
-        {
-          "label": "CRM admin",
-          "user": "admin@aurelia.ae",
-          "pass": "Password123!",
-          "weak": true
-        },
-        {
-          "label": "Shop customer",
-          "user": "+971501112233",
-          "pass": "Customer123!",
-          "weak": true
-        }
-      ],
-      "stack": "TypeScript · Prisma · Postgres · React"
     },
     {
       "id": "greenloop",
@@ -285,6 +260,80 @@
         "note": "Static site. No database."
       },
       "stack": "Static · Caddy"
+    },
+    {
+      "id": "islamic-clips",
+      "name": "Islamic Clips",
+      "tagline": "Short official clips, life-lesson ayahs and duas",
+      "group": "Sites",
+      "dir": "islamic-clips",
+      "containers": [
+        "islamic-clips-worker",
+        "islamic-clips"
+      ],
+      "urls": [
+        {
+          "label": "Web",
+          "url": "https://islamic.devxpert.online"
+        },
+        {
+          "label": "Ayahs",
+          "url": "https://islamic.devxpert.online/ayahs.html",
+          "probe": false
+        },
+        {
+          "label": "Duas",
+          "url": "https://islamic.devxpert.online/duas.html",
+          "probe": false
+        }
+      ],
+      "db": {
+        "type": "sqlite",
+        "volume": "/home/anan/apps/islamic-clips/data"
+      },
+      "envFile": ".env",
+      "stack": "Node 22 · SQLite · YouTube Data API"
+    },
+    {
+      "id": "exotic-cars-v2",
+      "name": "Exotic Cars V2",
+      "tagline": "The showroom upgraded: scroll film, 3D ring, garage and compare, finance, engine rev",
+      "group": "Sites",
+      "dir": "exotic-cars-v2",
+      "containers": [
+        "exotic-cars-v2"
+      ],
+      "urls": [
+        {
+          "label": "Site",
+          "url": "https://cars-v2.devxpert.online",
+          "path": "/healthz"
+        }
+      ],
+      "stack": "Vite · GSAP · Sketchfab 3D",
+      "note": "Leads go to the Exotic Cars CRM (exotic-cars container)."
+    },
+    {
+      "id": "motion-lib",
+      "name": "Motion Lib",
+      "tagline": "Dark component gallery of every animation and scroll trigger used across DevX Control's apps — live preview + source",
+      "group": "Sites",
+      "dir": "motion-lib",
+      "containers": [
+        "motion-lib"
+      ],
+      "urls": [
+        {
+          "label": "Site",
+          "url": "https://motion.devxpert.online",
+          "path": "/healthz"
+        }
+      ],
+      "db": {
+        "type": "none",
+        "note": "Static site, no backend."
+      },
+      "stack": "Vanilla JS · GSAP · Caddy"
     }
   ],
   "infra": {

@@ -2,6 +2,7 @@
 import { h, clear, icon, toast, actionBtn, confirmDialog } from '../ui.js';
 import { forgetDomains } from './domainpick.js';
 import { api, stream } from '../api.js';
+import { mongoClustersPanel } from './mongo.js';
 
 const tag = (t, text) => h('span', { class: 'hud-tag', dataset: { t } }, text);
 const head = (t, ...r) => h('div', { class: 'panel-head' }, h('h2', {}, t), h('span', { class: 'grow' }), ...r);
@@ -16,7 +17,7 @@ export function connectionsPage(ctx) {
     let c; try { c = await api('/connections'); } catch (e) { clear(host).append(h('div', { class: 'banner bad' }, e.message)); return; }
     clear(host).append(
       h('header', { class: 'page-head' }, h('div', {}, h('div', { class: 'hud-eyebrow' }, 'Set up once'), h('h1', {}, 'Connections'), h('p', { class: 'lede' }, 'GitHub gives Autopilot, Studio and Onboard your repos. An AI model writes fixes, reports and suggestions.'))),
-      h('div', { class: 'cols' }, githubPanel(c), aiPanel(c)), dnsPanel(c));
+      h('div', { class: 'cols' }, githubPanel(c), aiPanel(c)), mongoClustersPanel(c, { reload: load }), dnsPanel(c));
     window.dispatchEvent(new Event('dc:content'));
   }
 
@@ -80,9 +81,9 @@ export function connectionsPage(ctx) {
     const log = h('div', { class: 'term', hidden: true, role: 'log' });
     const install = actionBtn({ ic: 'download', label: c.ollama.installed ? 'Download model' : 'Install on this server', onClick: async () => {
       if (!(await confirmDialog({ title: 'Install Ollama here?', body: `This runs an Ollama container and downloads the model. It uses disk and memory on this server${c.memTotal ? ` (${GB(c.memTotal)} RAM total)` : ''}. Other apps could slow down while it runs.`, confirm: 'Install' }))) return;
-      try { const r = await api('/connections/ollama/install', { method: 'POST', body: { model: model7.value } }); log.hidden = false; clear(log); es = stream(`/jobs/${r.job}/stream`, { line: (l) => { log.append(h('span', { class: 'ln' }, l)); log.scrollTop = log.scrollHeight; }, done: ({ code }) => { es?.close(); toast(code === 0 ? 'Ollama is ready and selected' : 'Install failed, read the log', code === 0 ? 'ok' : 'bad'); if (code === 0) load(); } }); } catch (e) { toast(e.message, 'bad'); } } });
+      try { const r = await api('/connections/ollama/install', { method: 'POST', body: { model: model7.value } }); log.hidden = false; clear(log); es = stream(`/jobs/${r.job}/stream`, { line: (l) => { log.append(h('span', { class: 'ln' }, l)); log.scrollTop = log.scrollHeight; }, done: ({ code }) => { es?.close(); toast(code === 0 ? 'Local Qwen fallback is ready' : 'Install failed, read the log', code === 0 ? 'ok' : 'bad'); if (code === 0) load(); } }); } catch (e) { toast(e.message, 'bad'); } } });
     return h('section', { class: 'panel hud' }, head('AI model', tag(c.llm ? 'ok' : 'idle', c.llm ? cur.model : 'not connected')), h('div', { class: 'pad-form stack' },
-      h('p', { class: 'muted' }, 'Any OpenAI-compatible endpoint works. Pick a free option:'),
+      h('p', { class: 'muted' }, `Databricks is the primary model for all AI features. ${c.llmFallback ? `Local ${c.llmFallback.model} is the automatic fallback if Databricks is unavailable.` : 'No local backup model is configured.'}`),
       h('div', { class: 'row wrap' }, c.presets.map((p) => h('button', { class: 'btn sm', onclick: () => preset(p), title: p.note }, p.name))),
       h('label', { class: 'lbl' }, 'Endpoint', base), h('label', { class: 'lbl' }, 'Model', model, dl), h('label', { class: 'lbl' }, 'API key', key),
       h('div', { class: 'row wrap' }, actionBtn({ ic: 'check', label: 'Save', cls: 'primary', onClick: async () => { try { await api('/connections/llm', { method: 'PUT', body: { baseUrl: base.value, model: model.value, apiKey: key.value } }); toast('AI model saved', 'ok'); load(); } catch (e) { toast(e.message, 'bad'); } } }), test,

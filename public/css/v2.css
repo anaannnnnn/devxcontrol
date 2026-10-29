@@ -443,3 +443,15 @@ main > *, .stack { margin-bottom: 0; }
 .panel-head h2 { font-size: 10.5px; letter-spacing: .2em; }
 @media (prefers-reduced-motion: reduce) { .hero > div:first-child::after, .btn.primary::after, .cta::after { animation: none; } }
 .hero { align-items: stretch; } .hero .scene-wrap { aspect-ratio: auto; min-height: 440px; max-height: none; height: 100%; }
+
+/* Databases page (MongoDB) */
+.mg-grid { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 860px) { .mg-grid { grid-template-columns: 1fr; } }
+.mg-list { display: flex; flex-direction: column; gap: 2px; }
+.mg-item { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 8px 10px; border-radius: 8px; border: 1px solid transparent; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.mg-item > span:first-of-type { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mg-item:hover { background: var(--panel-2); }
+.mg-item.on { background: var(--panel-2); border-color: var(--line-soft); }
+.mg-q { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; align-items: end; }
+@media (max-width: 700px) { .mg-q { grid-template-columns: 1fr; } }
+.mg-prev { max-width: 520px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted, inherit); }
