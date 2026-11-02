@@ -44,6 +44,9 @@ export function accountPage(ctx) {
       h('div', { class: 'cols' },
         h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h2', {}, 'Change password')), h('form', { class: 'pad-form', onsubmit: (e) => { e.preventDefault(); change.click(); } }, cur.el, nw.el, again.el, err, change)),
         h('div', { class: 'stack' },
+          h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h2', {}, 'App')), h('div', { class: 'pad-form' },
+            h('p', { class: 'muted' }, matchMedia('(display-mode: standalone)').matches || navigator.standalone ? 'You are using the installed app.' : 'Put DevX Control on your Home Screen: full screen, its own icon, opens fast.'),
+            !(matchMedia('(display-mode: standalone)').matches || navigator.standalone) && h('button', { class: 'btn', type: 'button', onclick: (e) => { const r = window.dcInstall?.(); if (r === 'unsupported') e.currentTarget.textContent = 'Use your browser menu: Install app'; } }, 'Install app'))),
           h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h2', {}, 'Two-step sign-in')), h('div', { class: 'pad-form' }, twofa)),
           h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h2', {}, 'People with access')), h('div', { class: 'pad-form' }, a.users.map((u) => h('div', { class: 'row', style: { padding: '6px 0' } }, icon('user', 16), h('b', {}, u.name), h('span', { class: 'grow' }), h('span', { class: `chip ${u.twoFactor ? 'ok' : 'warn'}` }, u.twoFactor ? '2-step on' : '2-step off'))))))));
   }

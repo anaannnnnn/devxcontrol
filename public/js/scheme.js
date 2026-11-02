@@ -2,7 +2,7 @@
 // Persists in localStorage. Does not touch the apps DevX Control manages.
 import { SCHEMES, KITS, AXES, CONSOLE_THEMES, normalizeSkin, schemeSpec, buildConsoleCss, recolorCss, activeTheme } from './lib/consolelook.js';
 
-const FILES = ['app', 'fx', 'glass', 'v2', 'space'];
+const FILES = ['app', 'fx', 'glass', 'v2', 'space', 'orbit', 'sidebar', 'assistant'];
 const KEY = 'dc-look';
 let sources = null;
 const cache = {};

@@ -45,7 +45,9 @@ function setMode(mode) {
 }
 
 /** Full console customizer: colors, themes, component kits, and fine tuning. Console only. */
-export function openAppearance() {
+export function openAppearance(opts) {
+  // The Aether Studio is the main look editor; the classic hue/kit editor stays reachable from it.
+  if (!(opts && opts.classic === true) && window.dcAether) return window.dcAether.open();
   const S = window.dcScheme;
   if (!S || document.querySelector('.look-sheet')) return;
   const body = h('div', { class: 'look-body' });
@@ -151,3 +153,5 @@ export function openAppearance() {
   window.addEventListener('dc:look', paint);
   paint();
 }
+
+window.__dcClassic = () => openAppearance({ classic: true });

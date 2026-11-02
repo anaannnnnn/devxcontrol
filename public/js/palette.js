@@ -13,6 +13,7 @@ const score = (q, text) => {
 
 export function openPalette({ admin = true, fleet, go, refresh, toggleTheme, signOut }) {
   const items = [
+    { label: 'Aether Studio: themes, textures, fonts', hint: 'alt t', ic: 'palette', run: () => window.dcAether?.open() },
     { label: 'Fleet overview', hint: 'g f', ic: 'radar', run: () => go('/') },
     { label: 'Autopilot', hint: 'g p', ic: 'flow', run: () => go('/pipeline') },
     { label: 'Change reports', hint: 'g r', ic: 'diff', run: () => go('/reviews') },

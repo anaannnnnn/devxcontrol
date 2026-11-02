@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { docker, run, live } from './lib/docker.js';
 import { loadRegistry, readEnv, writeEnv, maskValue } from './lib/registry.js';
 import { makeAuth } from './lib/auth.js';
+import { swSource } from './lib/sw.js';
 import { makeUsers, MIN_PASSWORD } from './lib/users.js';
 import { Monitor } from './lib/monitor.js';
 import { makeOps } from './lib/ops.js';
@@ -1323,6 +1324,8 @@ app.get('/themes/:file', (req, res) => {
 app.use((req, res, next) => /^\/jarvis(?:\/|$)/i.test(req.path) ? notFound(res, 'Page') : next());
 
 /* ---- static UI ---- */
+app.get('/sw.js', (req, res) => res.set({ 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-cache', 'Service-Worker-Allowed': '/' }).send(swSource(path.join(here, 'public'))));
+app.get('/manifest.webmanifest', (req, res) => res.set({ 'Content-Type': 'application/manifest+json; charset=utf-8', 'Cache-Control': 'no-cache' }).send(fs.readFileSync(path.join(here, 'public', 'manifest.webmanifest'))));
 app.use(express.static(path.join(here, 'public'), { maxAge: '1h', setHeaders: (res, p) => { if (p.endsWith('index.html')) res.set('Cache-Control', 'no-cache'); } }));
 app.get('/openapi.yaml', (req, res) => res.sendFile(path.join(here, 'openapi.yaml')));
 app.use((err, req, res, next) => {
