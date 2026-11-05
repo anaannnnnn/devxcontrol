@@ -122,7 +122,7 @@ final class SSHService {
                     terminalPixelHeight: 0,
                     terminalModes: .init([.ECHO: 1])
                 )
-                try await ssh.withPTY(request) { inbound, outbound in
+                let ptyHandler: @Sendable (TTYOutput, TTYStdinWriter) async throws -> Void = { inbound, outbound in
                     await MainActor.run { self.stdinWriter = outbound }
                     for try await chunk in inbound {
                         let text: String
@@ -138,6 +138,7 @@ final class SSHService {
                         }
                     }
                 }
+                try await ssh.withPTY(request, perform: ptyHandler)
             } catch is CancellationError {
                 // expected on disconnect
             } catch {
