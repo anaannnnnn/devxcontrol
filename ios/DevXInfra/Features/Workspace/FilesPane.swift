@@ -83,7 +83,7 @@ struct FilesPane: View {
                                             let url = FileManager.default.temporaryDirectory.appendingPathComponent(item.name)
                                             try data.write(to: url)
                                             error = "Downloaded to \(url.lastPathComponent) (tmp)."
-                                        } catch { error = error.localizedDescription }
+                                        } catch { self.error = error.localizedDescription }
                                     }
                                 }
                             }
