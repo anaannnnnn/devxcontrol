@@ -24,6 +24,8 @@ chmod +x ios/scripts/build_unsigned_ipa.sh
 # → ios/build/unsigned-ipa/DevXInfra-unsigned.ipa
 ```
 
+For a GitHub Actions build, push this workflow on a branch named `build-unsigned-ipa/...` and download the `DevXInfra-unsigned-ipa` artifact from its Actions run.
+
 Built with `CODE_SIGNING_ALLOWED=NO` (no Team, no codesign). Device install still needs you to re-sign or sideload with your own tooling.
 
 ## First launch

@@ -1,0 +1,25 @@
+name: build-unsigned-ipa
+
+on:
+  push:
+    branches:
+      - 'build-unsigned-ipa/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build unsigned IPA
+        run: ./ios/scripts/build_unsigned_ipa.sh
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: DevXInfra-unsigned-ipa
+          path: ios/build/unsigned-ipa/DevXInfra-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 14
