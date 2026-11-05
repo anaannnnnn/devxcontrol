@@ -27,6 +27,8 @@ import { makeRemove } from './lib/remove.js';
 import { makeRoute } from './lib/route.js';
 import { findBlock } from './lib/caddyfile.js';
 import { makeDns } from './lib/dns.js';
+import { makeTailscale } from './lib/tailscale.js';
+import { makeInfraAgent } from './lib/infra-agent.js';
 import { makeOnboard } from './lib/onboard.js';
 import { makeReleaseNotes } from './lib/releasenotes.js';
 import { makeUpgrades } from './lib/upgrades.js';
@@ -106,6 +108,8 @@ const lab = labLib.makeThemeLab({ dataDir: DATA_DIR, themes });
 const creator = makeCreator({ llm, dataDir: DATA_DIR, audit: (id, msg, level = 'info') => monitor.event('create', id, msg, level) });
 const studio = makeStudio({ registry, github, dbx, ops, docker, autopilot });
 const dns = makeDns({ integrations });
+const tailscale = makeTailscale({ integrations });
+const infraAgents = makeInfraAgent({ dataDir: DATA_DIR });
 const onboard = makeOnboard({ dns, registry, github, ops, appsDir: APPS_DIR, caddyfile: env.CADDYFILE, domainSuffix: env.DOMAIN_SUFFIX || '', audit: (id, msg, level = 'info') => monitor.event('deploy', id, msg, level), autopilot, workRoot: autopilot.workRoot, dataDir: DATA_DIR, remoteBase: env.GIT_REMOTE_BASE || 'https://github.com' });
 const route = makeRoute({ registry, dns, ops, caddyfile: env.CADDYFILE, audit: (id, msg, level = 'info') => monitor.event('deploy', id, msg, level) });
 const removeApp = makeRemove({ registry, dns, ops, caddyfile: env.CADDYFILE, provision: onboard.provision, appsDir: APPS_DIR, monitor, audit: (id, msg, level = 'info') => monitor.event('deploy', id, msg, level) });
@@ -212,6 +216,18 @@ api.post('/session', (req, res) => {
   res.status(201).json({ csrf, user: r.name });
 });
 api.delete('/session', (req, res) => { res.set('Set-Cookie', `dc_s=; Max-Age=0; ${cookieFlags(req)}`); res.status(204).end(); });
+
+/* Host agent activate/heartbeat — authenticated by enrollment token / agent secret, not user session */
+api.post('/infra/agents/activate', async (req, res) => {
+  try { res.status(201).json(infraAgents.activate(req.body || {})); }
+  catch (e) { problem(res, e.status || 400, e.code || 'activate-failed', 'Activation failed', e.message); }
+});
+api.post('/infra/agents/heartbeat', async (req, res) => {
+  const agentId = req.headers['x-agent-id'] || req.body?.agentId;
+  const secret = req.headers['x-agent-secret'] || req.body?.secret;
+  try { res.json(infraAgents.heartbeat(String(agentId || ''), String(secret || ''), req.body || {})); }
+  catch (e) { problem(res, e.status || 401, e.code || 'heartbeat-failed', 'Heartbeat failed', e.message); }
+});
 
 api.use(auth.middleware);
 
@@ -1032,6 +1048,242 @@ api.put('/connections/dns/:provider', wrap(async (req, res) => {
   audit('settings', null, `${p} connected (${r.domains.filter((d) => d.provider === p).length} domains)`, 'ok'); res.json(r);
 }));
 api.delete('/connections/dns/:provider', (req, res) => { integrations.clearDns(req.params.provider); audit('settings', null, `${req.params.provider} disconnected`, 'warn'); res.status(204).end(); });
+api.put('/connections/tailscale', wrap(async (req, res) => {
+  try { integrations.setTailscale(req.body || {}); } catch (e) { return badRequest(res, e.message); }
+  const st = await tailscale.status();
+  if (!st.connected) { integrations.clearTailscale(); return badRequest(res, st.reason || 'Tailscale API key was rejected.'); }
+  audit('settings', null, `Tailscale connected (${st.deviceCount} devices)`, 'ok');
+  res.json({ ...st, ...integrations.pub().tailscale });
+}));
+api.delete('/connections/tailscale', (req, res) => { integrations.clearTailscale(); audit('settings', null, 'Tailscale disconnected', 'warn'); res.status(204).end(); });
+
+/* ---- Infra: Tailscale inventory for DevXInfra iOS (no shell/containers) ---- */
+function attachAgentMeta(devices) {
+  const agents = infraAgents.list();
+  return (devices || []).map((d) => {
+    const match = agents.find((a) =>
+      a.deviceId === d.id
+      || a.deviceId === d.name
+      || (d.magicDns && a.deviceId === d.magicDns.split('.')[0])
+      || a.hostname === d.name
+    );
+    if (!match) return { ...d, agent: { enrolled: false, capabilities: [] } };
+    return {
+      ...d,
+      agent: {
+        enrolled: true,
+        healthy: !!match.healthy,
+        agentId: match.agentId,
+        capabilities: match.capabilities || [],
+        lastHeartbeatAt: match.lastHeartbeatAt,
+      },
+    };
+  });
+}
+api.get('/infra/tailscale/status', wrap(async (req, res) => res.json(await tailscale.status())));
+api.get('/infra/tailscale/devices', wrap(async (req, res) => {
+  const r = await tailscale.devices({ q: req.query.q, statusFilter: req.query.status });
+  res.json({ ...r, devices: attachAgentMeta(r.devices) });
+}));
+api.get('/infra/tailscale/devices/:id', wrap(async (req, res) => {
+  const r = await tailscale.device(req.params.id);
+  if (r.device) r.device = attachAgentMeta([r.device])[0];
+  res.json(r);
+}));
+
+/* ---- Infra: overview, agents, device ops, domains, publish, AI ---- */
+api.get('/infra/overview', wrap(async (req, res) => {
+  const [ts, domains] = await Promise.all([
+    tailscale.devices().catch((e) => ({ connected: false, devices: [], reason: e.message })),
+    dns.domains().catch((e) => ({ domains: [], errors: { dns: e.message } })),
+  ]);
+  const agents = infraAgents.list();
+  const apps = agents.flatMap((a) => (infraAgents.snapshot(a.deviceId)?.applications || []));
+  const notes = [];
+  if (!ts.connected) notes.push(ts.reason || 'Tailscale not connected.');
+  if (!agents.length) notes.push('No host agents enrolled — containers, metrics, and discovery stay empty.');
+  res.json({
+    integrations: [
+      { id: 'tailscale', state: ts.connected ? 'connected' : 'disconnected', detail: ts.reason },
+      { id: 'cloudflare', state: integrations.dns().cloudflare ? 'connected' : 'disconnected' },
+      { id: 'godaddy', state: integrations.dns().godaddy ? 'connected' : 'disconnected' },
+      { id: 'agent', state: agents.some((a) => a.healthy) ? 'connected' : 'disconnected', detail: `${agents.length} enrolled` },
+    ],
+    devices: { online: (ts.devices || []).filter((d) => d.status === 'online').length, total: (ts.devices || []).length },
+    applications: { total: apps.length, recentNew: 0 },
+    publishedLinks: { total: 0, allHealthy: true },
+    domains: { total: (domains.domains || []).length, providers: [...new Set((domains.domains || []).map((d) => d.provider))] },
+    uptimeRatio: null,
+    activity: monitor.events.slice(-20).reverse().map((e) => ({
+      id: String(e.id), timestamp: new Date(e.t).toISOString(), message: e.msg, statusType: e.level === 'ok' ? 'ok' : e.level === 'bad' ? 'bad' : 'info', deviceId: e.app || null,
+    })),
+    notes,
+  });
+}));
+
+api.post('/infra/agents/enroll', wrap(async (req, res) => {
+  const u = users.get(me(req));
+  if (u?.role !== 'admin') return problem(res, 403, 'forbidden', 'Not allowed', 'Only an admin can enroll host agents.');
+  res.status(201).json(infraAgents.enroll({ label: req.body?.label }));
+}));
+api.get('/infra/agents', wrap(async (req, res) => res.json({ agents: infraAgents.list() })));
+
+api.get('/infra/devices/:id/metrics', wrap(async (req, res) => {
+  const snap = infraAgents.snapshot(req.params.id);
+  if (!snap?.enrolled) return problem(res, 409, 'agent-required', 'Host agent required', 'No enrolled agent for this device. Install agents/host and enroll it.');
+  if (!snap.healthy) return problem(res, 409, 'agent-offline', 'Agent offline', 'Last heartbeat is stale.');
+  res.json({ metrics: snap.metrics, lastHeartbeatAt: snap.lastHeartbeatAt });
+}));
+api.get('/infra/devices/:id/containers', wrap(async (req, res) => {
+  const snap = infraAgents.snapshot(req.params.id);
+  if (!snap?.enrolled) return problem(res, 409, 'agent-required', 'Host agent required', 'No enrolled agent for this device.');
+  res.json({ containers: snap.containers || [], healthy: snap.healthy });
+}));
+api.get('/infra/devices/:id/processes', wrap(async (req, res) => {
+  const snap = infraAgents.snapshot(req.params.id);
+  if (!snap?.enrolled) return problem(res, 409, 'agent-required', 'Host agent required', 'No enrolled agent for this device.');
+  res.json({ processes: snap.processes || [], healthy: snap.healthy });
+}));
+api.get('/infra/devices/:id/applications', wrap(async (req, res) => {
+  const snap = infraAgents.snapshot(req.params.id);
+  if (!snap?.enrolled) return problem(res, 409, 'agent-required', 'Host agent required', 'No enrolled agent for this device.');
+  res.json({ applications: snap.applications || [], healthy: snap.healthy });
+}));
+api.get('/infra/devices/:id/containers/:cid/logs', wrap(async (req, res) => {
+  const a = infraAgents.byDevice(req.params.id);
+  if (!a) return problem(res, 409, 'agent-required', 'Host agent required', 'No enrolled agent for this device.');
+  const cached = infraAgents.containerLogs(req.params.id, req.params.cid);
+  if (cached?.available) return res.json({ containerId: req.params.cid, text: cached.text, cached: true, healthy: cached.healthy });
+  const cmd = infraAgents.enqueue(a.agentId, 'container.logs', { containerId: req.params.cid, tail: Number(req.query.tail) || 200 });
+  res.status(202).json({
+    containerId: req.params.cid,
+    text: null,
+    cached: false,
+    jobId: cmd.id,
+    note: 'Log fetch queued — refresh after the next host-agent heartbeat.',
+  });
+}));
+api.post('/infra/devices/:id/containers/:cid/logs/fetch', wrap(async (req, res) => {
+  const a = infraAgents.byDevice(req.params.id);
+  if (!a) return problem(res, 409, 'agent-required', 'Host agent required', 'No enrolled agent for this device.');
+  const cmd = infraAgents.enqueue(a.agentId, 'container.logs', { containerId: req.params.cid, tail: Number(req.body?.tail) || 200 });
+  res.status(202).json({ jobId: cmd.id, note: 'Log fetch queued on host agent.' });
+}));
+api.post('/infra/devices/:id/discovery/scan', wrap(async (req, res) => {
+  const a = infraAgents.byDevice(req.params.id);
+  if (!a) return problem(res, 409, 'agent-required', 'Host agent required', 'No enrolled agent for this device.');
+  const cmd = infraAgents.enqueue(a.agentId, 'discovery.scan', {});
+  res.status(202).json({ jobId: cmd.id, note: 'Scan runs on next agent heartbeat; results appear under applications.' });
+}));
+
+api.get('/infra/domains', wrap(async (req, res) => res.json({ ...(await dns.domains()), serverIp: registry.serverIp })));
+
+const publishOps = new Map();
+api.post('/infra/publish', wrap(async (req, res) => {
+  const { deviceId, applicationId, domain, subdomain, provider } = req.body || {};
+  if (!deviceId || !applicationId || !domain || !subdomain) return badRequest(res, 'deviceId, applicationId, domain, and subdomain are required.');
+  const snap = infraAgents.snapshot(deviceId);
+  if (!snap?.enrolled) return problem(res, 409, 'agent-required', 'Host agent required', 'Publishing needs a host agent that discovered the application.');
+  const app = (snap.applications || []).find((x) => x.id === applicationId);
+  if (!app) return problem(res, 404, 'app-missing', 'Application not found', 'Run discovery on the host agent first.');
+  const zones = await dns.domains();
+  const owned = (zones.domains || []).find((d) => d.name === domain || domain.endsWith(`.${d.name}`));
+  if (!owned) return problem(res, 409, 'domain-missing', 'Domain not available', 'Connect Cloudflare/GoDaddy and use a domain you own.');
+  const operationId = 'pub_' + crypto.randomBytes(8).toString('hex');
+  const fqdn = `${subdomain}.${domain}`.replace(/\.+/g, '.');
+  const stages = [];
+  const push = (stage, ok, detail) => stages.push({ stage, ok, detail, at: new Date().toISOString() });
+  push('VALIDATING', true, `Application ${app.name} present on agent`);
+  push('ROUTING', true, `Target FQDN ${fqdn} via ${owned.provider}`);
+  // DNS A toward server IP when available — honest about tunnel limitation
+  if (registry.serverIp) {
+    const dnsResult = await dns.ensureA(fqdn, registry.serverIp, { proxied: false });
+    push('CONFIGURING', !!dnsResult.ok, dnsResult.message || dnsResult.reason || 'DNS update');
+  } else {
+    push('CONFIGURING', false, 'Control server IP unknown; DNS record not written.');
+  }
+  push('CONNECTING', false, 'Cloudflare Tunnel agent workflow not configured on this host yet.');
+  push('VERIFYING', false, 'Skipped — tunnel not connected.');
+  const live = false;
+  if (live) push('LIVE', true, `https://${fqdn}`);
+  else push('FAILED', false, 'Publish stopped before LIVE: configure cloudflared on the host agent for full tunnel publish.');
+  const op = { operationId, deviceId, applicationId, fqdn, provider: provider || owned.provider, stages, status: live ? 'LIVE' : 'FAILED' };
+  publishOps.set(operationId, op);
+  monitor.event('publish', deviceId, `Publish ${fqdn} → ${op.status}`, live ? 'ok' : 'warn');
+  res.status(202).json(op);
+}));
+api.get('/infra/publish/:operationId', (req, res) => {
+  const op = publishOps.get(req.params.operationId);
+  if (!op) return notFound(res);
+  res.json(op);
+});
+
+api.post('/infra/ai/chat', wrap(async (req, res) => {
+  const text = String(req.body?.text || '').slice(0, 4000);
+  const deviceId = req.body?.deviceId ? String(req.body.deviceId) : null;
+  if (!text) return badRequest(res, 'Enter a prompt.');
+  if (!integrations.llm()) {
+    return res.json({
+      reply: 'No LLM is connected on Control (Connections → AI). I will not invent infrastructure answers.',
+      tools: [],
+      blocked: true,
+    });
+  }
+  const tools = [];
+  const runTool = async (name, fn) => {
+    try {
+      const result = await fn();
+      tools.push({ name, ok: true, result });
+      return result;
+    } catch (e) {
+      tools.push({ name, ok: false, error: e.message });
+      return null;
+    }
+  };
+
+  const ts = await runTool('tailscale.devices', () => tailscale.devices());
+  const agents = await runTool('infra.agents', async () => ({ agents: infraAgents.list() }));
+  let deviceSnap = null;
+  if (deviceId) {
+    deviceSnap = await runTool('infra.device.snapshot', async () => {
+      const snap = infraAgents.snapshot(deviceId);
+      if (!snap?.enrolled) return { enrolled: false, note: 'No host agent for this device.' };
+      return {
+        enrolled: true,
+        healthy: snap.healthy,
+        metrics: snap.metrics,
+        containerCount: (snap.containers || []).length,
+        containers: (snap.containers || []).slice(0, 15).map((c) => ({ id: c.id, name: c.name, status: c.status })),
+        applicationCount: (snap.applications || []).length,
+        applications: (snap.applications || []).slice(0, 15).map((a) => ({ id: a.id, name: a.name, status: a.status })),
+        processCount: (snap.processes || []).length,
+      };
+    });
+  }
+  const domains = await runTool('dns.domains', () => dns.domains());
+
+  const context = {
+    question: text,
+    deviceId,
+    tailscaleConnected: !!ts?.connected,
+    devices: (ts?.devices || []).slice(0, 20).map((d) => ({ id: d.id, name: d.name, status: d.status })),
+    agents: agents?.agents || [],
+    device: deviceSnap,
+    domains: (domains?.domains || []).slice(0, 30).map((d) => ({ name: d.name, provider: d.provider })),
+    domainErrors: domains?.errors || {},
+  };
+  let reply;
+  try {
+    reply = await llm.chat([
+      { role: 'system', content: 'You are the DevXInfra ops assistant. Tool results are provided as JSON. Only cite those results. Never invent devices, containers, domains, or publish success. If a tool failed or data is missing, say what is missing and which Control connection or host agent is required.' },
+      { role: 'user', content: `Tool results:\n${JSON.stringify(context)}\n\nAnswer the operator question using only these results.` },
+    ]);
+  } catch (e) {
+    reply = `LLM error: ${e.message}`;
+  }
+  res.json({ reply: String(reply), tools, blocked: false, context });
+}));
+
 api.get('/apps/:id/route', wrap(async (req, res) => { const a = getApp(req, res); if (a) res.json(await route.diagnose(a)); }));
 api.post('/apps/:id/route', wrap(async (req, res) => {
   const a = getApp(req, res); if (!a) return;

@@ -14,6 +14,9 @@ final class AppEnvironment {
     let ssh: SSHService
     let sftp: SFTPService
     let backend: BackendStatusService
+    let overview: OverviewService
+    let agentDevices: AgentDeviceService
+    let publish: PublishService
     /// Bumped when nested session auth changes so SwiftUI refreshes the root shell.
     var authGeneration: Int = 0
 
@@ -27,7 +30,10 @@ final class AppEnvironment {
         tailscale: TailscaleService,
         ssh: SSHService,
         sftp: SFTPService,
-        backend: BackendStatusService
+        backend: BackendStatusService,
+        overview: OverviewService,
+        agentDevices: AgentDeviceService,
+        publish: PublishService
     ) {
         self.config = config
         self.keychain = keychain
@@ -39,6 +45,9 @@ final class AppEnvironment {
         self.ssh = ssh
         self.sftp = sftp
         self.backend = backend
+        self.overview = overview
+        self.agentDevices = agentDevices
+        self.publish = publish
         sessionStore.attach { [weak self] in
             self?.authGeneration &+= 1
         }
@@ -52,6 +61,9 @@ final class AppEnvironment {
         let session = SessionStore(api: api, credentials: credentials)
         let state = AppState()
         let backend = BackendStatusService(api: api, session: session)
+        let overview = OverviewService(api: api, session: session)
+        let agentDevices = AgentDeviceService(api: api, session: session)
+        let publish = PublishService(api: api)
         let tailscale = TailscaleService(api: api, session: session)
         let ssh = SSHService(credentials: credentials)
         let sftp = SFTPService(ssh: ssh)
@@ -65,7 +77,10 @@ final class AppEnvironment {
             tailscale: tailscale,
             ssh: ssh,
             sftp: sftp,
-            backend: backend
+            backend: backend,
+            overview: overview,
+            agentDevices: agentDevices,
+            publish: publish
         )
     }
 }

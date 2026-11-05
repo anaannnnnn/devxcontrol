@@ -41,17 +41,16 @@ actor ControlAPIClient {
         try await request(method: "GET", path: path, query: query, body: nil as Data?).data
     }
 
-    func send<Body: Encodable>(method: String, path: String, body: Body?) async throws -> Data {
+    func send<Body: Encodable>(method: String, path: String, body: Body) async throws -> Data {
         try await requestJSON(method: method, path: path, body: body).data
     }
 
-    func requestJSON<Body: Encodable>(method: String, path: String, body: Body?) async throws -> HTTPResponseBox {
-        let data: Data?
-        if let body {
-            data = try JSONEncoder().encode(body)
-        } else {
-            data = nil
-        }
+    func sendEmpty(method: String, path: String) async throws -> Data {
+        try await request(method: method, path: path, query: [], body: Data("{}".utf8)).data
+    }
+
+    func requestJSON<Body: Encodable>(method: String, path: String, body: Body) async throws -> HTTPResponseBox {
+        let data = try JSONEncoder().encode(body)
         return try await request(method: method, path: path, query: [], body: data)
     }
 

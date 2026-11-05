@@ -16,6 +16,14 @@ struct CommandCenterView: View {
                     topology
                     metrics
                     activityPreview
+                    if !env.overview.notes.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Notes").dxText(.eyebrow)
+                            ForEach(env.overview.notes, id: \.self) { note in
+                                Text("• \(note)").dxText(.muted)
+                            }
+                        }
+                    }
                 }
                 .padding(20)
                 .padding(.bottom, 88)
@@ -24,26 +32,22 @@ struct CommandCenterView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Text("DevXInfra")
-                        .font(DXFont.eyebrow(12))
-                        .foregroundStyle(DXColor.neonPrimary)
+                    Text("DevXInfra").font(DXFont.eyebrow(12)).foregroundStyle(DXColor.neonPrimary)
                 }
                 ToolbarItemGroup(placement: .topBarTrailing) {
-                    Button(action: onOpenActivity) {
-                        Image(systemName: "bell")
-                    }
-                    Button(action: onOpenAI) {
-                        Image(systemName: "sparkles")
-                    }
-                    Button(action: onOpenSettings) {
-                        Image(systemName: "gearshape")
-                    }
+                    Button(action: onOpenActivity) { Image(systemName: "bell") }
+                    Button(action: onOpenAI) { Image(systemName: "sparkles") }
+                    Button(action: onOpenSettings) { Image(systemName: "gearshape") }
                 }
             }
             .toolbarBackground(DXColor.bgPrimary, for: .navigationBar)
             .refreshable {
                 await env.backend.refresh()
                 await env.tailscale.refresh()
+                await env.overview.refresh()
+            }
+            .task {
+                await env.overview.refresh()
             }
         }
     }
@@ -61,10 +65,15 @@ struct CommandCenterView: View {
     private var integrationRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                IntegrationPill(title: "Tailscale", connected: env.tailscale.isConnected)
-                IntegrationPill(title: "Cloudflare", connected: env.backend.cloudflareConnected)
-                IntegrationPill(title: "GoDaddy", connected: env.backend.godaddyConnected)
-                IntegrationPill(title: "Control", connected: env.backend.isReachable)
+                ForEach(env.overview.integrations) { item in
+                    IntegrationPill(title: item.id.capitalized, connected: item.isConnected, detail: item.detail)
+                }
+                if env.overview.integrations.isEmpty {
+                    IntegrationPill(title: "Tailscale", connected: env.tailscale.isConnected)
+                    IntegrationPill(title: "Cloudflare", connected: env.backend.cloudflareConnected)
+                    IntegrationPill(title: "GoDaddy", connected: env.backend.godaddyConnected)
+                    IntegrationPill(title: "Control", connected: env.backend.isReachable)
+                }
             }
         }
     }
@@ -82,29 +91,27 @@ struct CommandCenterView: View {
                     action: onOpenSettings
                 )
                 .frame(minHeight: 220)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 4)
-                        .stroke(DXColor.borderInactive, lineWidth: 1)
-                )
+                .overlay(RoundedRectangle(cornerRadius: 4).stroke(DXColor.borderInactive, lineWidth: 1))
             } else {
                 TopologyCanvas(devices: env.tailscale.devices)
                     .frame(height: 260)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 4)
-                            .stroke(DXColor.borderInactive, lineWidth: 1)
-                    )
+                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(DXColor.borderInactive, lineWidth: 1))
             }
         }
     }
 
     private var metrics: some View {
-        let online = env.tailscale.devices.isEmpty ? "—" : "\(env.tailscale.onlineCount)"
-        let total = env.tailscale.devices.isEmpty ? "—" : "\(env.tailscale.devices.count)"
+        let online = env.overview.devicesOnline.map(String.init)
+            ?? (env.tailscale.devices.isEmpty ? "—" : "\(env.tailscale.onlineCount)")
+        let total = env.overview.devicesTotal.map(String.init)
+            ?? (env.tailscale.devices.isEmpty ? "—" : "\(env.tailscale.devices.count)")
+        let apps = env.overview.applicationsTotal.map(String.init) ?? "—"
+        let domains = env.overview.domainsTotal.map(String.init) ?? "—"
         return LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-            MetricTile(label: "Devices", value: "\(online) / \(total)", subtitle: env.tailscale.devices.isEmpty ? "Unavailable" : "Online / total")
-            MetricTile(label: "Apps", value: "—", subtitle: "Needs host agent")
-            MetricTile(label: "Links", value: "—", subtitle: "Needs publish API")
-            MetricTile(label: "Domains", value: env.backend.cloudflareConnected || env.backend.godaddyConnected ? "…" : "—", subtitle: "Open Domains tab")
+            MetricTile(label: "Devices", value: "\(online) / \(total)", subtitle: "Online / total")
+            MetricTile(label: "Apps", value: apps, subtitle: apps == "—" ? "Needs host agent" : "Discovered")
+            MetricTile(label: "Links", value: "—", subtitle: "After publish")
+            MetricTile(label: "Domains", value: domains, subtitle: "DNS providers")
         }
     }
 
@@ -117,8 +124,17 @@ struct CommandCenterView: View {
                     .font(DXFont.mono(11))
                     .foregroundStyle(DXColor.neonSecondary)
             }
-            Text("Activity events appear when the control backend and agents report them. Nothing is fabricated here.")
-                .dxText(.muted)
+            if env.overview.activity.isEmpty {
+                Text("Activity appears when Control and agents report events. Nothing is fabricated here.")
+                    .dxText(.muted)
+            } else {
+                ForEach(env.overview.activity.prefix(5)) { event in
+                    HStack(alignment: .top, spacing: 8) {
+                        StatusDot(kind: event.statusType == "ok" ? .online : event.statusType == "bad" ? .critical : .warning, size: 6)
+                        Text(event.message).font(DXFont.body(13)).foregroundStyle(DXColor.textSecondary)
+                    }
+                }
+            }
         }
     }
 }
