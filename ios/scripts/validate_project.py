@@ -61,6 +61,13 @@ def main() -> int:
         if token not in color:
             errors.append(f"design token {token} missing from DXColor.swift")
 
+    if "Citadel" not in pbx or "XCRemoteSwiftPackageReference" not in pbx:
+        errors.append("Citadel SPM package reference missing from project.pbxproj")
+    if "DevXInfra.entitlements" not in pbx:
+        errors.append("entitlements file not referenced in project")
+    if not (SRC / "Services" / "SSH" / "SSHService.swift").is_file():
+        errors.append("SSHService.swift missing")
+
     if errors:
         print("FAIL")
         for e in errors:

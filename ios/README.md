@@ -1,34 +1,23 @@
-# DevXInfra (iOS)
+# DevXInfra — open in Xcode
 
-Native SwiftUI client for **DevX Infrastructure OS**.
+## Open → sign → run
 
-## Open in Xcode (macOS required)
+1. On a Mac with Xcode 16+:
+   ```bash
+   git clone https://github.com/anaannnnnn/devxcontrol.git
+   cd devxcontrol
+   open ios/DevXInfra.xcodeproj
+   ```
+2. Wait for SPM to resolve **Citadel** (SSH/SFTP).
+3. Select target **DevXInfra** → **Signing & Capabilities** → choose your **Team** (Automatic signing).
+4. Pick an iPhone Simulator or device → **Run** (⌘R).
 
-```bash
-open ios/DevXInfra.xcodeproj
-```
+Bundle ID: `online.devxpert.DevXInfra` · iOS 17+ · Scheme: `DevXInfra`
 
-- Deployment target: iOS 17+
-- Bundle ID: `online.devxpert.DevXInfra`
-- Swift 6
+## First launch
 
-```bash
-xcodebuild -project ios/DevXInfra.xcodeproj -scheme DevXInfra -destination 'platform=iOS Simulator,name=iPhone 16' build
-```
+1. Unlock (device passcode / biometrics).
+2. Enter your **DevX Control** base URL + admin credentials.
+3. On Control: Connections → Tailscale API key; Cloudflare/GoDaddy as needed; enroll `agents/host` for containers/discovery.
 
-This Linux environment cannot run `xcodebuild`. Use `python3 ios/scripts/validate_project.py` for static structure checks.
-
-## What works in this scaffold
-
-- Design tokens (`#030607` / `#36FFB2`) and Command Center shell
-- Tabs: Command Center, Network, Applications, Domains, Workspace
-- Keychain credential store, LocalAuthentication unlock, Control API client
-- Tailscale device load via `/api/v1/infra/tailscale/devices` (honest empty if missing)
-- Domains via existing `/api/v1/dns/domains`
-- SSH/SFTP services that **refuse to simulate** a session until a real SSH library is linked
-
-## Configure
-
-1. Launch app → unlock → enter Control base URL + credentials
-2. Connect Tailscale / DNS / LLM on the Control backend
-3. Enroll a host agent for containers, metrics, discovery, publish
+Without those credentials the UI stays honestly empty — it will not invent devices or sessions.

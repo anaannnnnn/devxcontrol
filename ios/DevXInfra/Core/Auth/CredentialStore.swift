@@ -8,7 +8,8 @@ actor CredentialStore {
         static let csrfToken = "session.csrf"
         static let username = "session.username"
         static func sshPassword(host: String, user: String) -> String { "ssh.password.\(user)@\(host)" }
-        static func hostKey(host: String) -> String { "ssh.hostkey.\(host)" }
+        static func hostKeyFP(host: String) -> String { "ssh.hostkey.fp.\(host)" }
+        static func hostKeyBlob(host: String) -> String { "ssh.hostkey.blob.\(host)" }
     }
 
     init(keychain: KeychainStore) {
@@ -39,11 +40,21 @@ actor CredentialStore {
         try keychain.string(account: Account.sshPassword(host: host, user: user))
     }
 
-    func saveHostKeyFingerprint(host: String, fingerprint: String) throws {
-        try keychain.setString(fingerprint, account: Account.hostKey(host: host))
+    func saveHostKey(host: String, fingerprint: String, blob: Data) throws {
+        try keychain.setString(fingerprint, account: Account.hostKeyFP(host: host))
+        try keychain.set(blob, account: Account.hostKeyBlob(host: host))
     }
 
     func hostKeyFingerprint(host: String) throws -> String? {
-        try keychain.string(account: Account.hostKey(host: host))
+        try keychain.string(account: Account.hostKeyFP(host: host))
+    }
+
+    func hostKeyBlob(host: String) throws -> Data? {
+        try keychain.data(account: Account.hostKeyBlob(host: host))
+    }
+
+    /// Legacy API used by older call sites — fingerprint only (no silent trust).
+    func saveHostKeyFingerprint(host: String, fingerprint: String) throws {
+        try keychain.setString(fingerprint, account: Account.hostKeyFP(host: host))
     }
 }

@@ -29,7 +29,7 @@ final class DomainsService {
         }
 
         do {
-            let data = try await api.get(path: "dns/domains")
+            let data = try await api.get(path: "infra/domains")
             struct Resp: Decodable {
                 struct D: Decodable { var name: String; var provider: String; var id: String? }
                 var domains: [D]?

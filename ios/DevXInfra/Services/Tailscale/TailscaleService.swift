@@ -47,6 +47,7 @@ final class TailscaleService {
             struct Envelope: Decodable {
                 var devices: [DeviceDTO]
                 var connected: Bool?
+                var reason: String?
             }
             struct DeviceDTO: Decodable {
                 var id: String
@@ -82,8 +83,12 @@ final class TailscaleService {
                     agentCapabilities: d.agent?.capabilities ?? []
                 )
             }
-            isConnected = env.connected ?? true
-            blockedReason = nil
+            isConnected = env.connected ?? !env.devices.isEmpty
+            if env.connected == false {
+                blockedReason = env.reason ?? ConnectionRequirement.tailscaleAPI.rawValue
+            } else {
+                blockedReason = nil
+            }
         } catch InfraError.backend(let msg) where msg.localizedCaseInsensitiveContains("not found")
             || msg.contains("404") {
             devices = []

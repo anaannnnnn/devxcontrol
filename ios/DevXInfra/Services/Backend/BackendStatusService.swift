@@ -6,8 +6,13 @@ struct ConnectionsPublic: Decodable, Sendable {
         var cloudflare: Bool?
         var godaddy: Bool?
     }
+    struct Tailscale: Decodable, Sendable {
+        var connected: Bool?
+        var hasKey: Bool?
+        var tailnet: String?
+    }
     var dns: DNS?
-    var github: [String: String]?
+    var tailscale: Tailscale?
     var llm: [String: String]?
 }
 
@@ -20,6 +25,7 @@ final class BackendStatusService {
     var isReachable = false
     var cloudflareConnected = false
     var godaddyConnected = false
+    var tailscaleConfigured = false
     var lastError: String?
     var notes: [String] = []
 
@@ -37,6 +43,7 @@ final class BackendStatusService {
             isReachable = false
             cloudflareConnected = false
             godaddyConnected = false
+            tailscaleConfigured = false
             notes = ["Set a DevX Control base URL in Settings to connect."]
             lastError = error.localizedDescription
             return
@@ -49,11 +56,11 @@ final class BackendStatusService {
         }
 
         do {
-            // Prefer connections endpoint; fall back to dns/domains.
             if let data = try? await api.get(path: "connections") {
                 let pub = try await api.decode(ConnectionsPublic.self, from: data)
                 cloudflareConnected = pub.dns?.cloudflare == true
                 godaddyConnected = pub.dns?.godaddy == true
+                tailscaleConfigured = pub.tailscale?.connected == true || pub.tailscale?.hasKey == true
                 isReachable = true
             } else {
                 let data = try await api.get(path: "dns/domains")
@@ -64,9 +71,6 @@ final class BackendStatusService {
                 cloudflareConnected = providers.contains("cloudflare")
                 godaddyConnected = providers.contains("godaddy")
                 isReachable = true
-                if let errors = resp.errors, !errors.isEmpty {
-                    notes.append(contentsOf: errors.map { "\($0.key): \($0.value)" })
-                }
             }
         } catch {
             isReachable = false
