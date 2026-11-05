@@ -2,6 +2,8 @@
 
 One dashboard for every DevX app: live status, start/stop/restart, logs, database browser and editor, GitHub updates with optional auto-pull, encrypted credential vault, backups, TLS/DNS checks and alerts.
 
+**Native iOS client (DevX Infrastructure OS):** see [`ios/`](ios/) — open `ios/DevXInfra.xcodeproj` on macOS with Xcode.
+
 ## Install (any OS)
 
 DevX Control has no npm dependencies. It needs **Node 20+** and, to manage containers, **Docker** (Docker Desktop on Windows and macOS).
