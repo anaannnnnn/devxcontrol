@@ -2,7 +2,7 @@ import Foundation
 import Observation
 import NIO
 import NIOSSH
-import Citadel
+@preconcurrency import Citadel
 
 struct SSHTarget: Hashable, Sendable {
     var host: String
