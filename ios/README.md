@@ -14,6 +14,18 @@
 
 Bundle ID: `online.devxpert.DevXInfra` · iOS 17+ · Scheme: `DevXInfra`
 
+## Unsigned IPA (Mac only)
+
+Cloud/Linux agents cannot compile an IPA — there is no Xcode here. On your Mac:
+
+```bash
+chmod +x ios/scripts/build_unsigned_ipa.sh
+./ios/scripts/build_unsigned_ipa.sh
+# → ios/build/unsigned-ipa/DevXInfra-unsigned.ipa
+```
+
+Built with `CODE_SIGNING_ALLOWED=NO` (no Team, no codesign). Device install still needs you to re-sign or sideload with your own tooling.
+
 ## First launch
 
 1. Unlock (device passcode / biometrics).
