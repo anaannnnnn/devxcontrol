@@ -12,7 +12,7 @@ struct ProblemDetails: Decodable, Sendable {
 struct HTTPResponseBox: Sendable {
     var status: Int
     var data: Data
-    var headers: [AnyHashable: Any]
+    var setCookieHeaders: [String]
 }
 
 actor ControlAPIClient {
@@ -100,7 +100,14 @@ actor ControlAPIClient {
             let text = String(data: data, encoding: .utf8) ?? "HTTP \(http.statusCode)"
             throw InfraError.backend(text)
         }
-        return HTTPResponseBox(status: http.statusCode, data: data, headers: http.allHeaderFields)
+        let setCookieHeaders = http.allHeaderFields.compactMap { key, value -> [String]? in
+            guard String(describing: key).caseInsensitiveCompare("Set-Cookie") == .orderedSame else {
+                return nil
+            }
+            if let cookie = value as? String { return [cookie] }
+            return value as? [String]
+        }.flatMap { $0 }
+        return HTTPResponseBox(status: http.statusCode, data: data, setCookieHeaders: setCookieHeaders)
     }
 
     func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {

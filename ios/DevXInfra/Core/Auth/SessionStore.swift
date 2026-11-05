@@ -77,9 +77,9 @@ final class SessionStore {
             let body = SignInBody(username: username, password: password, code: totp?.isEmpty == true ? nil : totp)
             let box = try await api.requestJSON(method: "POST", path: "session", body: body)
             let decoded = try? await api.decode(SignInResponse.self, from: box.data)
-            let cookieToken = Self.cookieValue(named: "dc_s", from: box.headers) ?? decoded?.token
+            let cookieToken = Self.cookieValue(named: "dc_s", from: box.setCookieHeaders) ?? decoded?.token
             let csrf = decoded?.csrf
-                ?? Self.cookieValue(named: "csrf", from: box.headers)
+                ?? Self.cookieValue(named: "csrf", from: box.setCookieHeaders)
                 ?? ""
             guard let token = cookieToken, !token.isEmpty else {
                 // Some Control builds set HttpOnly cookies that URLSession stores automatically.
@@ -109,13 +109,8 @@ final class SessionStore {
         emit()
     }
 
-    private static func cookieValue(named: String, from headers: [AnyHashable: Any]) -> String? {
-        let setCookie = headers["Set-Cookie"] ?? headers["set-cookie"]
-        let raw: [String]
-        if let s = setCookie as? String { raw = [s] }
-        else if let a = setCookie as? [String] { raw = a }
-        else { return nil }
-        for piece in raw {
+    private static func cookieValue(named: String, from setCookieHeaders: [String]) -> String? {
+        for piece in setCookieHeaders {
             for part in piece.split(separator: ";") {
                 let kv = part.split(separator: "=", maxSplits: 1).map(String.init)
                 if kv.count == 2, kv[0].trimmingCharacters(in: .whitespaces) == named {
