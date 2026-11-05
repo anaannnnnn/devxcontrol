@@ -62,14 +62,6 @@ final class SFTPService {
                 ))
             }
         }
-        // Fallback if component API differs — parse longname lines
-        if items.isEmpty {
-            for nameMsg in names {
-                let filename = nameMsg.path
-                if filename == "." || filename == ".." { continue }
-                items.append(RemoteFileItem(name: filename, path: join(path, filename), isDirectory: false, size: nil, modifiedAt: nil))
-            }
-        }
         entries = items.sorted { lhs, rhs in
             if lhs.isDirectory != rhs.isDirectory { return lhs.isDirectory && !rhs.isDirectory }
             return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending

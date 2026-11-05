@@ -71,7 +71,7 @@ struct FilesPane: View {
                             Button("Delete", role: .destructive) {
                                 Task {
                                     do { try await env.sftp.remove(path: item.path, isDirectory: item.isDirectory) }
-                                    catch { error = error.localizedDescription }
+                                    catch { self.error = error.localizedDescription }
                                 }
                             }
                             if !item.isDirectory {
@@ -121,7 +121,7 @@ struct FilesPane: View {
                 let dest = parent == "" || parent == "." ? newName : "\(parent)/\(newName)"
                 Task {
                     do { try await env.sftp.rename(from: item.path, to: dest) }
-                    catch { error = error.localizedDescription }
+                    catch { self.error = error.localizedDescription }
                     renaming = nil
                 }
             }

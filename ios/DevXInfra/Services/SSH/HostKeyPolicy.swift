@@ -51,7 +51,13 @@ final class KeychainHostKeyValidator: NIOSSHClientServerAuthenticationDelegate, 
     }
 
     func validateHostKey(hostKey: NIOSSHPublicKey, validationCompletePromise: EventLoopPromise<Void>) {
-        let blob = HostKeyCodec.blob(for: hostKey)
+        let blob: Data
+        do {
+            blob = try HostKeyCodec.blob(for: hostKey)
+        } catch {
+            validationCompletePromise.fail(error)
+            return
+        }
         let fingerprint = HostKeyCodec.fingerprintSHA256(blob)
         lastFingerprint = fingerprint
         lastBlob = blob
@@ -94,14 +100,23 @@ final class KeychainHostKeyValidator: NIOSSHClientServerAuthenticationDelegate, 
 }
 
 enum HostKeyCodec {
-    static func blob(for key: NIOSSHPublicKey) -> Data {
-        var buffer = ByteBufferAllocator().buffer(capacity: 256)
-        _ = buffer.writeSSHHostKey(key)
-        return Data(buffer.readableBytesView)
+    static func blob(for key: NIOSSHPublicKey) throws -> Data {
+        let components = String(openSSHPublicKey: key).split(separator: " ", maxSplits: 1)
+        guard let encodedKey = components.last,
+              let blob = Data(base64Encoded: String(encodedKey)) else {
+            throw HostKeyEncodingError.invalidPublicKey
+        }
+        return blob
     }
 
     static func fingerprintSHA256(_ blob: Data) -> String {
         let digest = SHA256.hash(data: blob)
         return "SHA256:" + Data(digest).base64EncodedString()
     }
+}
+
+private enum HostKeyEncodingError: Error, LocalizedError {
+    case invalidPublicKey
+
+    var errorDescription: String? { "Could not encode the SSH host key." }
 }
